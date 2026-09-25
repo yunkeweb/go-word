@@ -171,7 +171,7 @@ func TestTemplateProcessorCoverage(t *testing.T) {
 	if lastTagStart("<w:tr>x", "w:tr") < 0 {
 		t.Fatal("tag")
 	}
-	if replaceRowMacros("${/blk}", 1) != "${/blk}" {
+	if replaceRowMacros("${/blk}", 1) != "${/blk#1}" {
 		t.Fatal("slash macro")
 	}
 	start, end := findXMLBlock("abc", "zz", "w:p")

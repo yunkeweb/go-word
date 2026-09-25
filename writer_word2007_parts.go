@@ -104,7 +104,7 @@ func (w *word2007Writer) appProps() []byte {
 		Application: "GoWord",
 		Company:     w.doc.info.Company,
 		Manager:     w.doc.info.Manager,
-		AppVersion:  "0.2",
+		AppVersion:  "0.3",
 	}
 	b, _ := common.MarshalXML(ap)
 	return b

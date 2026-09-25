@@ -31,7 +31,7 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 - **Headers & footers** — default, first page, even page; watermarks
 - **Formulas** — Office Math (OMML) via `pkg/math` (fractions, superscripts, identifiers, operators)
 - **Styles** — font, paragraph, table, numbering, section, paper size and margins
-- **Template fill** — replace `${variable}` placeholders, clone rows/blocks, insert images and charts
+- **Template fill** — `${variable}` placeholders, nested `${block}` loops, `${if}` / `${endif}` clipping, merged-cell row cloning, images and charts
 - **Streaming writer** — `NewStreamWriter` writes paragraphs and tables into the ZIP stream as they are produced
 - **Memory pooling** — `sync.Pool` reuses buffers, XML writers, and core style structs
 - **More** — lists, charts, footnotes/endnotes, HTML import, document properties
@@ -39,7 +39,7 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 ### Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.2.0
+go get github.com/yunkeweb/go-word@v0.3.0
 ```
 
 Requires **Go 1.21+**.
@@ -130,6 +130,12 @@ func main() {
 
 `Document.Save` and `Document.WriteTo` also stream `word/document.xml` into the ZIP package.
 
+### What's new in v0.3.0
+
+- **Nested block loops** — `${block_a}` may contain `${block_b}`; `CloneNestedBlock` fills hierarchical lists
+- **Conditional blocks** — `${if condition}` … `${endif}` drops the covering paragraphs or table rows when false or empty
+- **Merged-cell row cloning** — `CloneRow` / `DeleteRow` keep `w:vMerge` restart/continue groups and `gridSpan` together
+
 ### What's new in v0.2.0
 
 - **StreamWriter** for incremental paragraphs, tables, and other body elements
@@ -165,7 +171,7 @@ GNU Lesser General Public License version 3, same family as PHPWord. See [LICENS
 - **页眉页脚** — 默认 / 首页 / 偶数页，以及水印
 - **公式** — 通过 `pkg/math` 写入 Office Math（OMML）：分数、上下标、标识符与运算符
 - **样式配置** — 字体、段落、表格、编号、节、纸张与页边距
-- **模板变量** — 替换 `${variable}` 占位符，支持行/块克隆、插入图片与图表
+- **模板变量** — `${variable}` 占位符、嵌套 `${block}` 循环、`${if}` / `${endif}` 裁剪、合并单元格行克隆，以及图片与图表
 - **流式写入** — `NewStreamWriter` 边生成边写入 ZIP 流中的段落与表格
 - **对象池** — 通过 `sync.Pool` 复用缓冲区、XML 写入器与核心样式结构
 - **更多** — 列表、图表、脚注/尾注、HTML 导入、文档属性
@@ -173,7 +179,7 @@ GNU Lesser General Public License version 3, same family as PHPWord. See [LICENS
 ### 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.2.0
+go get github.com/yunkeweb/go-word@v0.3.0
 ```
 
 需要 **Go 1.21** 或更高版本。
@@ -263,6 +269,12 @@ func main() {
 ```
 
 `Document.Save` 与 `Document.WriteTo` 同样将 `word/document.xml` 流式写入 ZIP 包。
+
+### v0.3.0 更新
+
+- **嵌套块循环**：`${block_a}` 内可再套 `${block_b}`；`CloneNestedBlock` 填充多级列表
+- **条件块**：`${if condition}` … `${endif}` 在条件为假或空时裁掉覆盖的段落或表格行
+- **合并单元格行克隆**：`CloneRow` / `DeleteRow` 将 `w:vMerge` 的 restart/continue 组与 `gridSpan` 一并处理
 
 ### v0.2.0 更新
 

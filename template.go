@@ -136,45 +136,49 @@ func (t *TemplateProcessor) SetValues(values map[string]string) {
 }
 
 // CloneRow clones the table row that contains ${search} count times,
-// renaming macros to ${search#1}, ${search#2}, ...
+// renaming macros to ${search#1}, ${search#2}, ... Vertically merged
+// (w:vMerge restart/continue) rows are cloned as a single group.
 func (t *TemplateProcessor) CloneRow(search string, count int) error {
 	search = unwrapMacro(search)
 	needle := macro(search)
 	name := t.mainPart()
 	xml := string(t.files[name])
-	row := extractRowContaining(xml, needle)
+	row, start, end := extractRowGroupContaining(xml, needle)
 	if row == "" {
 		return fmt.Errorf("word: row with %s not found", needle)
 	}
+	if count <= 0 {
+		t.files[name] = []byte(xml[:start] + xml[end:])
+		return nil
+	}
 	var b strings.Builder
 	for i := 1; i <= count; i++ {
-		cloned := replaceRowMacros(row, i)
-		b.WriteString(cloned)
+		b.WriteString(indexMacros(row, i))
 	}
-	xml = strings.Replace(xml, row, b.String(), 1)
-	t.files[name] = []byte(xml)
+	t.files[name] = []byte(xml[:start] + b.String() + xml[end:])
 	return nil
 }
 
 // CloneBlock clones the region between ${block} and ${/block} count times.
+// Nested ${inner}...${/inner} markers are indexed (${inner#1}) so they can
+// be cloned per instance. Matching uses nesting depth for same-named blocks.
 func (t *TemplateProcessor) CloneBlock(blockName string, count int) error {
 	name := t.mainPart()
 	xml := string(t.files[name])
-	start := macro(blockName)
-	end := macro("/" + blockName)
-	i := strings.Index(xml, start)
-	j := strings.Index(xml, end)
-	if i < 0 || j < 0 || j < i {
+	openStart, openEnd, closeStart, closeEnd, ok := findBlockBounds(xml, blockName)
+	if !ok {
 		return fmt.Errorf("word: block %s not found", blockName)
 	}
-	innerStart := i + len(start)
-	block := xml[innerStart:j]
+	if count <= 0 {
+		t.files[name] = []byte(xml[:openStart] + xml[closeEnd:])
+		return nil
+	}
+	block := xml[openEnd:closeStart]
 	var b strings.Builder
 	for n := 1; n <= count; n++ {
-		b.WriteString(replaceRowMacros(block, n))
+		b.WriteString(indexMacros(block, n))
 	}
-	xml = xml[:i] + b.String() + xml[j+len(end):]
-	t.files[name] = []byte(xml)
+	t.files[name] = []byte(xml[:openStart] + b.String() + xml[closeEnd:])
 	return nil
 }
 
@@ -182,15 +186,11 @@ func (t *TemplateProcessor) CloneBlock(blockName string, count int) error {
 func (t *TemplateProcessor) ReplaceBlock(blockName, replacement string) error {
 	name := t.mainPart()
 	xml := string(t.files[name])
-	start := macro(blockName)
-	end := macro("/" + blockName)
-	i := strings.Index(xml, start)
-	j := strings.Index(xml, end)
-	if i < 0 || j < 0 || j < i {
+	openStart, _, _, closeEnd, ok := findBlockBounds(xml, blockName)
+	if !ok {
 		return fmt.Errorf("word: block %s not found", blockName)
 	}
-	xml = xml[:i] + xmlEscape(replacement) + xml[j+len(end):]
-	t.files[name] = []byte(xml)
+	t.files[name] = []byte(xml[:openStart] + xmlEscape(replacement) + xml[closeEnd:])
 	return nil
 }
 
@@ -305,16 +305,8 @@ func lastTagStart(xml, local string) int {
 	return s2
 }
 
-var macroInRow = regexp.MustCompile(`\$\{([^}]+)\}`)
-
 func replaceRowMacros(row string, n int) string {
-	return macroInRow.ReplaceAllStringFunc(row, func(m string) string {
-		name := m[2 : len(m)-1]
-		if strings.HasPrefix(name, "/") {
-			return m
-		}
-		return macro(name + "#" + strconv.Itoa(n))
-	})
+	return indexMacros(row, n)
 }
 
 func unwrapMacro(s string) string {
@@ -344,6 +336,7 @@ func (t *TemplateProcessor) Save(filename string) error {
 
 // Bytes returns the filled template as a .docx package.
 func (t *TemplateProcessor) Bytes() ([]byte, error) {
+	t.applyRemainingIfBlocks()
 	buf := common.GetBuffer()
 	defer common.PutBuffer(buf)
 	zw := common.NewZipWriter(buf)
@@ -372,7 +365,7 @@ func (t *TemplateProcessor) GetVariableCount() map[string]int {
 	for _, name := range t.xmlParts() {
 		for _, m := range re.FindAllSubmatch(t.files[name], -1) {
 			key := string(m[1])
-			if strings.HasPrefix(key, "/") {
+			if isControlMacro(key) {
 				continue
 			}
 			out[key]++
@@ -389,7 +382,7 @@ func (t *TemplateProcessor) GetVariables() []string {
 	for _, name := range t.xmlParts() {
 		for _, m := range re.FindAllSubmatch(t.files[name], -1) {
 			key := string(m[1])
-			if strings.HasPrefix(key, "/") {
+			if isControlMacro(key) {
 				continue
 			}
 			if _, ok := seen[key]; ok {
@@ -432,16 +425,16 @@ func (t *TemplateProcessor) DeleteRow(search string) error {
 		return fmt.Errorf("word: table for %s not found", needle)
 	}
 	tableEnd := idx + tableEndRel + len("</w:tbl>")
-	tableXML := xml[tableStart:tableEnd]
-	if strings.Count(tableXML, "<w:tr") == 1 {
-		t.files[name] = []byte(xml[:tableStart] + xml[tableEnd:])
-		return nil
-	}
-	row := extractRowContaining(xml, needle)
+	row, rowStart, rowEnd := extractRowGroupContaining(xml, needle)
 	if row == "" {
 		return fmt.Errorf("word: row with %s not found", needle)
 	}
-	t.files[name] = []byte(strings.Replace(xml, row, "", 1))
+	remaining := xml[tableStart:rowStart] + xml[rowEnd:tableEnd]
+	if countOpenTags(remaining, "w:tr") == 0 {
+		t.files[name] = []byte(xml[:tableStart] + xml[tableEnd:])
+		return nil
+	}
+	t.files[name] = []byte(xml[:rowStart] + xml[rowEnd:])
 	return nil
 }
 
