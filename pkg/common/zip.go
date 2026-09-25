@@ -21,13 +21,18 @@ func NewZipWriter(w io.Writer) *ZipWriter {
 
 // AddFile writes name with DEFLATE compression.
 func (z *ZipWriter) AddFile(name string, data []byte) error {
-	name = path.Clean(strings.ReplaceAll(name, "\\", "/"))
-	w, err := z.zw.Create(name)
+	w, err := z.Create(name)
 	if err != nil {
 		return err
 	}
 	_, err = w.Write(data)
 	return err
+}
+
+// Create opens a streaming zip entry. Only one entry may be open at a time.
+func (z *ZipWriter) Create(name string) (io.Writer, error) {
+	name = path.Clean(strings.ReplaceAll(name, "\\", "/"))
+	return z.zw.Create(name)
 }
 
 // Close flushes the zip central directory.

@@ -8,36 +8,62 @@ import (
 )
 
 // XMLWriter writes OpenXML using encoding/xml.Encoder.
+// Buffer mode (NewXMLWriter / GetXMLWriter) accumulates into buf.
+// Destination mode (NewXMLWriterTo) encodes directly to dest so large
+// document.xml parts can stream into a zip entry without a full copy.
 type XMLWriter struct {
-	buf   *bytes.Buffer
-	enc   *xml.Encoder
-	stack []string
+	buf     *bytes.Buffer
+	dest    io.Writer
+	enc     *xml.Encoder
+	stack   []string
+	attrBuf []xml.Attr
 }
 
-// NewXMLWriter returns a writer that emits UTF-8 XML.
+// NewXMLWriter returns a writer that emits UTF-8 XML into an in-memory buffer.
 func NewXMLWriter() *XMLWriter {
 	buf := &bytes.Buffer{}
-	enc := xml.NewEncoder(buf)
-	return &XMLWriter{buf: buf, enc: enc}
+	return &XMLWriter{buf: buf, enc: xml.NewEncoder(buf)}
+}
+
+// NewXMLWriterTo encodes XML directly to dest. Do not return it to the pool.
+func NewXMLWriterTo(dest io.Writer) *XMLWriter {
+	return &XMLWriter{dest: dest, enc: xml.NewEncoder(dest)}
+}
+
+func (w *XMLWriter) sink() io.Writer {
+	if w.dest != nil {
+		return w.dest
+	}
+	return w.buf
 }
 
 // StartDocument writes the XML declaration used by Office Open XML.
 func (w *XMLWriter) StartDocument() {
-	w.buf.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
+	_, _ = io.WriteString(w.sink(), xmlDecl)
+}
+
+// Flush writes any buffered encoder output to the sink.
+func (w *XMLWriter) Flush() error {
+	if w.enc == nil {
+		return nil
+	}
+	return w.enc.Flush()
 }
 
 // Start opens an element. attrs is a sequence of name, value pairs.
 func (w *XMLWriter) Start(name string, attrs ...string) {
 	el := xml.StartElement{Name: xml.Name{Local: name}}
+	w.attrBuf = w.attrBuf[:0]
 	for i := 0; i+1 < len(attrs); i += 2 {
 		if attrs[i+1] == "" {
 			continue
 		}
-		el.Attr = append(el.Attr, xml.Attr{
+		w.attrBuf = append(w.attrBuf, xml.Attr{
 			Name:  xml.Name{Local: attrs[i]},
 			Value: attrs[i+1],
 		})
 	}
+	el.Attr = w.attrBuf
 	_ = w.enc.EncodeToken(el)
 	w.stack = append(w.stack, name)
 }
@@ -90,12 +116,16 @@ func (w *XMLWriter) WT(s string) {
 // Raw writes already-encoded XML after flushing the encoder.
 func (w *XMLWriter) Raw(s string) {
 	_ = w.enc.Flush()
-	w.buf.WriteString(s)
+	_, _ = io.WriteString(w.sink(), s)
 }
 
 // Bytes flushes the encoder and returns the document.
+// Destination-mode writers return nil; use Flush and write to dest instead.
 func (w *XMLWriter) Bytes() []byte {
 	_ = w.enc.Flush()
+	if w.buf == nil {
+		return nil
+	}
 	return w.buf.Bytes()
 }
 

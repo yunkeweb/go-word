@@ -15,6 +15,13 @@ func TestZipWriterReader(t *testing.T) {
 	if err := zw.AddFile(`word\media\a.png`, []byte("img")); err != nil {
 		t.Fatal(err)
 	}
+	ew, err := zw.Create("word/document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ew.Write([]byte("<w:document/>")); err != nil {
+		t.Fatal(err)
+	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -36,8 +43,12 @@ func TestZipWriterReader(t *testing.T) {
 	if _, err := zr.ReadFile("nope"); err == nil {
 		t.Fatal("missing file")
 	}
-	if len(zr.Files()) != 1 {
+	if len(zr.Files()) != 2 {
 		t.Fatalf("files=%d", len(zr.Files()))
+	}
+	doc, err := zr.ReadFile("word/document.xml")
+	if err != nil || string(doc) != "<w:document/>" {
+		t.Fatalf("document.xml=%q %v", doc, err)
 	}
 }
 

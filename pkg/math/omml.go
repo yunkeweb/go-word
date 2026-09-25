@@ -13,7 +13,7 @@ const ommlNS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 // WriteOMML serializes m to Office MathML (OMML).
 func WriteOMML(m *Math) ([]byte, error) {
-	w := common.NewXMLWriter()
+	w := common.GetXMLWriter()
 	w.Start("m:oMathPara", "xmlns:m", ommlNS)
 	w.Start("m:oMath")
 	for _, el := range m.Elements {
@@ -21,7 +21,7 @@ func WriteOMML(m *Math) ([]byte, error) {
 	}
 	w.End()
 	w.End()
-	return w.Bytes(), nil
+	return common.FinishXML(w), nil
 }
 
 func writeElement(w *common.XMLWriter, el Element) {

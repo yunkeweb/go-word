@@ -344,6 +344,7 @@ func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
 			xw.End()
 		}
 		xw.End()
+		_ = xw.Flush()
 	}
 	xw.End()
 }

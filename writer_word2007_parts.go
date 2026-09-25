@@ -104,7 +104,7 @@ func (w *word2007Writer) appProps() []byte {
 		Application: "GoWord",
 		Company:     w.doc.info.Company,
 		Manager:     w.doc.info.Manager,
-		AppVersion:  "0.1",
+		AppVersion:  "0.2",
 	}
 	b, _ := common.MarshalXML(ap)
 	return b
@@ -138,7 +138,12 @@ func (w *word2007Writer) customProps() []byte {
 }
 
 func (w *word2007Writer) documentXML() []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeDocument(xw)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeDocumentStart(xw *common.XMLWriter) {
 	xw.StartDocument()
 	xw.Start("w:document",
 		"xmlns:wpc", "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
@@ -155,6 +160,15 @@ func (w *word2007Writer) documentXML() []byte {
 		"xmlns:pic", ooxml.NSPic,
 	)
 	xw.Start("w:body")
+}
+
+func (w *word2007Writer) writeDocumentEnd(xw *common.XMLWriter) {
+	xw.End() // body
+	xw.End() // document
+}
+
+func (w *word2007Writer) writeDocument(xw *common.XMLWriter) {
+	w.writeDocumentStart(xw)
 	secs := w.doc.sections
 	for i, sec := range secs {
 		w.writeContainer(xw, sec.Elements(), false)
@@ -168,9 +182,8 @@ func (w *word2007Writer) documentXML() []byte {
 			xw.End()
 		}
 	}
-	xw.End() // body
-	xw.End() // document
-	return xw.Bytes()
+	w.writeDocumentEnd(xw)
+	_ = xw.Flush()
 }
 
 func (w *word2007Writer) writeSectPr(xw *common.XMLWriter, sec *element.Section) {
@@ -227,7 +240,12 @@ func (w *word2007Writer) writeSectPr(xw *common.XMLWriter, sec *element.Section)
 }
 
 func (w *word2007Writer) hdrFtrXML(tag string, el element.Element) []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeHdrFtr(xw, tag, el)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeHdrFtr(xw *common.XMLWriter, tag string, el element.Element) {
 	xw.StartDocument()
 	xw.Start(tag,
 		"xmlns:w", ooxml.NSW,
@@ -246,11 +264,15 @@ func (w *word2007Writer) hdrFtrXML(tag string, el element.Element) []byte {
 	}
 	w.writeContainer(xw, kids, false)
 	xw.End()
-	return xw.Bytes()
 }
 
 func (w *word2007Writer) notesXML(foot bool) []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeNotesXML(xw, foot)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeNotesXML(xw *common.XMLWriter, foot bool) {
 	xw.StartDocument()
 	tag := "w:footnotes"
 	if !foot {
@@ -289,11 +311,15 @@ func (w *word2007Writer) notesXML(foot bool) []byte {
 		}
 	}
 	xw.End()
-	return xw.Bytes()
 }
 
 func (w *word2007Writer) settingsXML() []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeSettingsXML(xw)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeSettingsXML(xw *common.XMLWriter) {
 	xw.StartDocument()
 	xw.Start("w:settings", "xmlns:w", ooxml.NSW, "xmlns:m", ooxml.NSM, "xmlns:o", ooxml.NSO, "xmlns:r", ooxml.NSR)
 	s := w.doc.settings
@@ -424,11 +450,15 @@ func (w *word2007Writer) settingsXML() []byte {
 		"w:accent4", "accent4", "w:accent5", "accent5", "w:accent6", "accent6",
 		"w:hyperlink", "hyperlink", "w:followedHyperlink", "followedHyperlink")
 	xw.End()
-	return xw.Bytes()
 }
 
 func (w *word2007Writer) stylesXML() []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeStylesXML(xw)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeStylesXML(xw *common.XMLWriter) {
 	xw.StartDocument()
 	xw.Start("w:styles", "xmlns:w", ooxml.NSW, "xmlns:r", ooxml.NSR)
 	xw.Start("w:docDefaults")
@@ -472,7 +502,6 @@ func (w *word2007Writer) stylesXML() []byte {
 		}
 	}
 	xw.End()
-	return xw.Bytes()
 }
 
 func (w *word2007Writer) writeStyleDef(xw *common.XMLWriter, id, typ, name string, def bool, font *style.Font, para *style.Paragraph) {
@@ -531,7 +560,12 @@ func (w *word2007Writer) writeTableStyle(xw *common.XMLWriter, ns namedStyle) {
 }
 
 func (w *word2007Writer) numberingXML() []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeNumberingXML(xw)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeNumberingXML(xw *common.XMLWriter) {
 	xw.StartDocument()
 	xw.Start("w:numbering", "xmlns:w", ooxml.NSW)
 	// abstract 1: bullets
@@ -618,7 +652,6 @@ func (w *word2007Writer) numberingXML() []byte {
 	xw.Empty("w:abstractNumId", "w:val", "2")
 	xw.End()
 	xw.End()
-	return xw.Bytes()
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -638,7 +671,12 @@ func nonzero(n, def int) int {
 }
 
 func (w *word2007Writer) commentsXML() []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	w.writeCommentsXML(xw)
+	return common.FinishXML(xw)
+}
+
+func (w *word2007Writer) writeCommentsXML(xw *common.XMLWriter) {
 	xw.StartDocument()
 	xw.Start("w:comments",
 		"xmlns:w", ooxml.NSW,
@@ -665,5 +703,4 @@ func (w *word2007Writer) commentsXML() []byte {
 		xw.End()
 	}
 	xw.End()
-	return xw.Bytes()
 }

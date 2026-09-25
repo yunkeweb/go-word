@@ -1,13 +1,11 @@
 package word
 
 import (
-	"bytes"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/yunkeweb/go-word/element"
 	"github.com/yunkeweb/go-word/metadata"
+	"github.com/yunkeweb/go-word/pkg/common"
 	"github.com/yunkeweb/go-word/style"
 )
 
@@ -204,11 +202,12 @@ func (d *Document) WriteTo(dest io.Writer) (int64, error) {
 
 // Bytes returns the Word2007 package as a byte slice.
 func (d *Document) Bytes() ([]byte, error) {
-	var buf bytes.Buffer
-	if _, err := d.WriteTo(&buf); err != nil {
+	buf := common.GetBuffer()
+	defer common.PutBuffer(buf)
+	if _, err := d.WriteTo(buf); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return common.CloneBytes(buf.Bytes()), nil
 }
 
 // Writer writes a document to a file or stream.
@@ -220,11 +219,4 @@ type Writer interface {
 // Reader loads a document from a file.
 type Reader interface {
 	Load(filename string) (*Document, error)
-}
-
-func writeFile(filename string, data []byte) error {
-	if filename == "" {
-		return fmt.Errorf("word: empty filename")
-	}
-	return os.WriteFile(filename, data, 0o644)
 }

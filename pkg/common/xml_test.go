@@ -50,6 +50,9 @@ func TestXMLWriterAPI(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatal("WriteTo empty")
 	}
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestMarshalXML(t *testing.T) {

@@ -1,6 +1,9 @@
 package style
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestFontIsZeroAndHalfPoints(t *testing.T) {
 	if !(Font{}.IsZero()) {
@@ -187,4 +190,51 @@ func TestChartAndTOCDefaults(t *testing.T) {
 	if toc.TabPos != 9062 || toc.TabLeader != "dot" {
 		t.Fatal("toc")
 	}
+}
+
+func TestStylePools(t *testing.T) {
+	f := GetFont()
+	f.Bold = true
+	PutFont(f)
+	f2 := GetFont()
+	if f2.Bold {
+		t.Fatal("font not zeroed")
+	}
+	PutFont(f2)
+	PutFont(nil)
+
+	p := GetParagraph()
+	p.Alignment = JcCenter
+	PutParagraph(p)
+	p2 := GetParagraph()
+	if p2.Alignment != "" {
+		t.Fatal("paragraph not zeroed")
+	}
+	PutParagraph(p2)
+	PutParagraph(nil)
+
+	tbl := GetTable()
+	tbl.Width = 100
+	PutTable(tbl)
+	tbl2 := GetTable()
+	if tbl2.Width != 0 {
+		t.Fatal("table not zeroed")
+	}
+	PutTable(tbl2)
+	PutTable(nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f := GetFont()
+			PutFont(f)
+			p := GetParagraph()
+			PutParagraph(p)
+			tb := GetTable()
+			PutTable(tb)
+		}()
+	}
+	wg.Wait()
 }

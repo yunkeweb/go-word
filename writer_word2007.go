@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -70,95 +71,159 @@ func newWord2007Writer(doc *Document) *word2007Writer {
 }
 
 func (w *word2007Writer) Save(filename string) error {
-	var buf bytes.Buffer
-	if _, err := w.WriteTo(&buf); err != nil {
+	if filename == "" {
+		return fmt.Errorf("word: empty filename")
+	}
+	f, err := os.Create(filename)
+	if err != nil {
 		return err
 	}
-	return writeFile(filename, buf.Bytes())
+	_, err = w.WriteTo(f)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func addXML(zw *common.ZipWriter, name string, write func(*common.XMLWriter)) error {
+	xw := common.GetXMLWriter()
+	write(xw)
+	err := zw.AddFile(name, xw.Bytes())
+	common.PutXMLWriter(xw)
+	return err
+}
+
+type zipPart struct {
+	name  string
+	data  []byte
+	write func(*common.XMLWriter)
+}
+
+func addParts(zw *common.ZipWriter, parts []zipPart) error {
+	for _, p := range parts {
+		if p.write != nil {
+			if err := addXML(zw, p.name, p.write); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := zw.AddFile(p.name, p.data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *word2007Writer) WriteTo(dest io.Writer) (int64, error) {
 	if err := w.prepare(); err != nil {
 		return 0, err
 	}
-	var buf bytes.Buffer
-	zw := common.NewZipWriter(&buf)
-
-	parts := []struct {
-		name string
-		data []byte
-	}{
-		{"[Content_Types].xml", w.contentTypes()},
-		{"_rels/.rels", w.pkgRels()},
-		{"docProps/core.xml", w.coreProps()},
-		{"docProps/app.xml", w.appProps()},
-		{"word/document.xml", w.documentXML()},
-		{"word/_rels/document.xml.rels", w.docRels()},
-		{"word/styles.xml", w.stylesXML()},
-		{"word/numbering.xml", w.numberingXML()},
-		{"word/settings.xml", w.settingsXML()},
-		{"word/webSettings.xml", []byte(webSettingsXML)},
-		{"word/fontTable.xml", []byte(fontTableXML)},
-		{"word/theme/theme1.xml", []byte(themeXML)},
-	}
-	if len(w.doc.info.Custom) > 0 {
-		parts = append(parts, struct {
-			name string
-			data []byte
-		}{"docProps/custom.xml", w.customProps()})
-	}
-	for _, p := range parts {
-		if err := zw.AddFile(p.name, p.data); err != nil {
-			return 0, err
-		}
-	}
-	for _, h := range w.headers {
-		data := w.hdrFtrXML("w:hdr", h.El)
-		if err := zw.AddFile(h.Name, data); err != nil {
-			return 0, err
-		}
-	}
-	for _, f := range w.footers {
-		data := w.hdrFtrXML("w:ftr", f.El)
-		if err := zw.AddFile(f.Name, data); err != nil {
-			return 0, err
-		}
-	}
-	if len(w.doc.footnotes) > 0 {
-		if err := zw.AddFile("word/footnotes.xml", w.notesXML(true)); err != nil {
-			return 0, err
-		}
-	}
-	if len(w.doc.endnotes) > 0 {
-		if err := zw.AddFile("word/endnotes.xml", w.notesXML(false)); err != nil {
-			return 0, err
-		}
-	}
-	if len(w.comments) > 0 {
-		if err := zw.AddFile("word/comments.xml", w.commentsXML()); err != nil {
-			return 0, err
-		}
-	}
-	for _, ch := range w.charts {
-		if err := zw.AddFile(ch.Name, chartPartXML(ch.El)); err != nil {
-			return 0, err
-		}
-	}
-	for _, o := range w.oles {
-		if err := zw.AddFile(o.Name, o.Data); err != nil {
-			return 0, err
-		}
-	}
-	for _, img := range w.images {
-		if err := zw.AddFile(img.Name, img.Data); err != nil {
-			return 0, err
-		}
+	cw := &countingWriter{w: dest}
+	zw := common.NewZipWriter(cw)
+	if err := w.writeZip(zw); err != nil {
+		_ = zw.Close()
+		return cw.n, err
 	}
 	if err := zw.Close(); err != nil {
-		return 0, err
+		return cw.n, err
 	}
-	n, err := dest.Write(buf.Bytes())
-	return int64(n), err
+	return cw.n, nil
+}
+
+func (w *word2007Writer) writeZip(zw *common.ZipWriter) error {
+	if err := w.writeZipMeta(zw); err != nil {
+		return err
+	}
+	fw, err := zw.Create("word/document.xml")
+	if err != nil {
+		return err
+	}
+	xw := common.NewXMLWriterTo(fw)
+	w.writeDocument(xw)
+	if err := xw.Flush(); err != nil {
+		return err
+	}
+	return w.writeZipAfterDocument(zw)
+}
+
+func (w *word2007Writer) writeSupportingParts(zw *common.ZipWriter) error {
+	if err := w.writeZipMeta(zw); err != nil {
+		return err
+	}
+	return w.writeZipAfterDocument(zw)
+}
+
+func (w *word2007Writer) writeZipMeta(zw *common.ZipWriter) error {
+	return addParts(zw, []zipPart{
+		{name: "[Content_Types].xml", data: w.contentTypes()},
+		{name: "_rels/.rels", data: w.pkgRels()},
+		{name: "docProps/core.xml", data: w.coreProps()},
+		{name: "docProps/app.xml", data: w.appProps()},
+	})
+}
+
+func (w *word2007Writer) writeZipAfterDocument(zw *common.ZipWriter) error {
+	parts := []zipPart{
+		{name: "word/_rels/document.xml.rels", data: w.docRels()},
+		{name: "word/styles.xml", write: w.writeStylesXML},
+		{name: "word/numbering.xml", write: w.writeNumberingXML},
+		{name: "word/settings.xml", write: w.writeSettingsXML},
+		{name: "word/webSettings.xml", data: []byte(webSettingsXML)},
+		{name: "word/fontTable.xml", data: []byte(fontTableXML)},
+		{name: "word/theme/theme1.xml", data: []byte(themeXML)},
+	}
+	if len(w.doc.info.Custom) > 0 {
+		parts = append(parts, zipPart{name: "docProps/custom.xml", data: w.customProps()})
+	}
+	for _, h := range w.headers {
+		h := h
+		parts = append(parts, zipPart{name: h.Name, write: func(xw *common.XMLWriter) {
+			w.writeHdrFtr(xw, "w:hdr", h.El)
+		}})
+	}
+	for _, f := range w.footers {
+		f := f
+		parts = append(parts, zipPart{name: f.Name, write: func(xw *common.XMLWriter) {
+			w.writeHdrFtr(xw, "w:ftr", f.El)
+		}})
+	}
+	if len(w.doc.footnotes) > 0 {
+		parts = append(parts, zipPart{name: "word/footnotes.xml", write: func(xw *common.XMLWriter) {
+			w.writeNotesXML(xw, true)
+		}})
+	}
+	if len(w.doc.endnotes) > 0 {
+		parts = append(parts, zipPart{name: "word/endnotes.xml", write: func(xw *common.XMLWriter) {
+			w.writeNotesXML(xw, false)
+		}})
+	}
+	if len(w.comments) > 0 {
+		parts = append(parts, zipPart{name: "word/comments.xml", write: w.writeCommentsXML})
+	}
+	for _, ch := range w.charts {
+		ch := ch
+		parts = append(parts, zipPart{name: ch.Name, write: func(xw *common.XMLWriter) {
+			writeChartPart(xw, ch.El)
+		}})
+	}
+	for _, o := range w.oles {
+		parts = append(parts, zipPart{name: o.Name, data: o.Data})
+	}
+	for _, img := range w.images {
+		parts = append(parts, zipPart{name: img.Name, data: img.Data})
+	}
+	return addParts(zw, parts)
 }
 
 func (w *word2007Writer) addRel(typ, target, mode string) string {

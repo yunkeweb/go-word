@@ -32,12 +32,14 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 - **Formulas** — Office Math (OMML) via `pkg/math` (fractions, superscripts, identifiers, operators)
 - **Styles** — font, paragraph, table, numbering, section, paper size and margins
 - **Template fill** — replace `${variable}` placeholders, clone rows/blocks, insert images and charts
+- **Streaming writer** — `NewStreamWriter` writes paragraphs and tables into the ZIP stream as they are produced
+- **Memory pooling** — `sync.Pool` reuses buffers, XML writers, and core style structs
 - **More** — lists, charts, footnotes/endnotes, HTML import, document properties
 
 ### Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.1.0
+go get github.com/yunkeweb/go-word@v0.2.0
 ```
 
 Requires **Go 1.21+**.
@@ -85,6 +87,56 @@ func main() {
 
 A longer runnable sample lives in [`examples/simple`](examples/simple). API docs: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word).
 
+### Streaming writer
+
+For large tables or reports, write body content incrementally so `document.xml` is never fully buffered:
+
+```go
+package main
+
+import (
+	"log"
+	"os"
+
+	"github.com/yunkeweb/go-word"
+	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/style"
+)
+
+func main() {
+	f, err := os.Create("report.docx")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	sw := word.NewStreamWriter(f)
+	if err := sw.WriteParagraph("Quarterly report", style.Font{Bold: true, Size: 16}); err != nil {
+		log.Fatal(err)
+	}
+
+	tbl := element.NewTable(style.Table{Width: 9000})
+	row := tbl.AddRow()
+	row.AddCell(4500).AddText("Item")
+	row.AddCell(4500).AddText("Amount")
+	if err := sw.WriteTable(tbl); err != nil {
+		log.Fatal(err)
+	}
+	if err := sw.Close(); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+`Document.Save` and `Document.WriteTo` also stream `word/document.xml` into the ZIP package.
+
+### What's new in v0.2.0
+
+- **StreamWriter** for incremental paragraphs, tables, and other body elements
+- **Streaming `Save` / `WriteTo`** so the full document XML is not held in one buffer
+- **`sync.Pool`** reuse of `bytes.Buffer`, XML writers, and Font / Paragraph / Table styles
+- Benchmarks versus v0.1.1 (median of 3): `BenchmarkTableRender` about 74% fewer B/op and 37% fewer allocs/op; `BenchmarkSaveDocx` about 52% fewer B/op and 34% fewer allocs/op
+
 ### License
 
 GNU Lesser General Public License version 3, same family as PHPWord. See [LICENSE](LICENSE).
@@ -114,12 +166,14 @@ GNU Lesser General Public License version 3, same family as PHPWord. See [LICENS
 - **公式** — 通过 `pkg/math` 写入 Office Math（OMML）：分数、上下标、标识符与运算符
 - **样式配置** — 字体、段落、表格、编号、节、纸张与页边距
 - **模板变量** — 替换 `${variable}` 占位符，支持行/块克隆、插入图片与图表
+- **流式写入** — `NewStreamWriter` 边生成边写入 ZIP 流中的段落与表格
+- **对象池** — 通过 `sync.Pool` 复用缓冲区、XML 写入器与核心样式结构
 - **更多** — 列表、图表、脚注/尾注、HTML 导入、文档属性
 
 ### 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.1.0
+go get github.com/yunkeweb/go-word@v0.2.0
 ```
 
 需要 **Go 1.21** 或更高版本。
@@ -166,6 +220,56 @@ func main() {
 ```
 
 更完整的可运行示例见 [`examples/simple`](examples/simple)。包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。
+
+### 流式写入器
+
+大表格或长报告可按行写入，避免把整份 `document.xml` 缓存在内存中：
+
+```go
+package main
+
+import (
+	"log"
+	"os"
+
+	"github.com/yunkeweb/go-word"
+	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/style"
+)
+
+func main() {
+	f, err := os.Create("report.docx")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	sw := word.NewStreamWriter(f)
+	if err := sw.WriteParagraph("季度报告", style.Font{Bold: true, Size: 16}); err != nil {
+		log.Fatal(err)
+	}
+
+	tbl := element.NewTable(style.Table{Width: 9000})
+	row := tbl.AddRow()
+	row.AddCell(4500).AddText("项目")
+	row.AddCell(4500).AddText("金额")
+	if err := sw.WriteTable(tbl); err != nil {
+		log.Fatal(err)
+	}
+	if err := sw.Close(); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+`Document.Save` 与 `Document.WriteTo` 同样将 `word/document.xml` 流式写入 ZIP 包。
+
+### v0.2.0 更新
+
+- **StreamWriter**：按段写入段落、表格及其他正文元素
+- **流式 `Save` / `WriteTo`**：不再把整份文档 XML 放进单一缓冲区
+- **`sync.Pool`**：复用 `bytes.Buffer`、XML 写入器以及 Font / Paragraph / Table 样式
+- 相对 v0.1.1 的基准（三次中位数）：`BenchmarkTableRender` 约减少 74% B/op、37% allocs/op；`BenchmarkSaveDocx` 约减少 52% B/op、34% allocs/op
 
 ### 开源协议
 

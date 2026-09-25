@@ -13,14 +13,14 @@ const mathMLNS = "http://www.w3.org/1998/Math/MathML"
 
 // WriteMathML serializes m as W3C MathML 2.0 (PHP Writer\MathML).
 func WriteMathML(m *Math) ([]byte, error) {
-	w := common.NewXMLWriter()
+	w := common.GetXMLWriter()
 	w.StartDocument()
 	w.Start("math", "xmlns", mathMLNS)
 	for _, el := range m.Elements {
 		writeMathMLElement(w, el)
 	}
 	w.End()
-	return w.Bytes(), nil
+	return common.FinishXML(w), nil
 }
 
 func writeMathMLElement(w *common.XMLWriter, el Element) {

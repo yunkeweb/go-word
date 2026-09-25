@@ -37,7 +37,12 @@ var chartKinds = map[string]chartKind{
 }
 
 func chartPartXML(ch *element.Chart) []byte {
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
+	writeChartPart(xw, ch)
+	return common.FinishXML(xw)
+}
+
+func writeChartPart(xw *common.XMLWriter, ch *element.Chart) {
 	xw.StartDocument()
 	xw.Start("c:chartSpace",
 		"xmlns:c", "http://schemas.openxmlformats.org/drawingml/2006/chart",
@@ -50,7 +55,6 @@ func chartPartXML(ch *element.Chart) []byte {
 	xw.End()
 	xw.End()
 	xw.End()
-	return xw.Bytes()
 }
 
 func writeChartBody(xw *common.XMLWriter, ch *element.Chart) {
@@ -307,7 +311,7 @@ func chartDrawingXML(rid string, ch *element.Chart, wrapP bool) string {
 		cy = 1000000
 	}
 	name := "Chart" + rid
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
 	if wrapP {
 		xw.Start("w:p")
 	}
@@ -330,5 +334,7 @@ func chartDrawingXML(rid string, ch *element.Chart, wrapP bool) string {
 	if wrapP {
 		xw.End()
 	}
-	return xw.String()
+	s := xw.String()
+	common.PutXMLWriter(xw)
+	return s
 }

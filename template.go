@@ -344,8 +344,9 @@ func (t *TemplateProcessor) Save(filename string) error {
 
 // Bytes returns the filled template as a .docx package.
 func (t *TemplateProcessor) Bytes() ([]byte, error) {
-	var buf bytes.Buffer
-	zw := common.NewZipWriter(&buf)
+	buf := common.GetBuffer()
+	defer common.PutBuffer(buf)
+	zw := common.NewZipWriter(buf)
 	for _, name := range t.order {
 		if err := zw.AddFile(name, t.files[name]); err != nil {
 			return nil, err
@@ -354,7 +355,7 @@ func (t *TemplateProcessor) Bytes() ([]byte, error) {
 	if err := zw.Close(); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return common.CloneBytes(buf.Bytes()), nil
 }
 
 // SaveAs is an alias for Save (PHPWord).
@@ -572,9 +573,11 @@ func (t *TemplateProcessor) SetChart(search string, ch *element.Chart) error {
 
 func renderElementXML(el element.Element, inline bool) string {
 	w := newWord2007Writer(New())
-	xw := common.NewXMLWriter()
+	xw := common.GetXMLWriter()
 	w.writeElement(xw, el, inline)
-	return xw.String()
+	s := xw.String()
+	common.PutXMLWriter(xw)
+	return s
 }
 
 func findXMLBlock(xml, needle, blockType string) (start, end int) {
