@@ -1,0 +1,40 @@
+name: Go Test & Coverage
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    name: Run Tests & Check Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22' # 指定项目使用的 Go 版本
+          cache: true        # 开启 Go 依赖缓存，加速 CI 构建
+
+      - name: Install Dependencies
+        run: go mod download
+
+      - name: Run Unit Tests with Coverage
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Display Coverage Summary
+        run: |
+          go tool cover -func=coverage.out
+
+      # （可选）将覆盖率结果上传到 Codecov 等开源覆盖率分析平台
+      # - name: Upload Coverage to Codecov
+      #   uses: codecov/codecov-action@v4
+      #   with:
+      #     files: ./coverage.out
+      #     fail_ci_if_error: false
