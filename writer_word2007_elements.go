@@ -2,6 +2,7 @@ package word
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/yunkeweb/go-word/element"
 	"github.com/yunkeweb/go-word/pkg/common"
@@ -160,13 +161,56 @@ func (w *word2007Writer) writeText(xw *common.XMLWriter, t *element.Text, inline
 		xw.Start("w:p")
 		w.writePPrFrom(xw, t.ParagraphStyle)
 	}
-	xw.Start("w:r")
-	w.writeRPrFrom(xw, t.FontStyle)
-	xw.WT(t.Content)
-	xw.End()
+	w.writeTrackedRun(xw, t.GetTrackChange(), func() {
+		xw.Start("w:r")
+		w.writeRPrFrom(xw, t.FontStyle)
+		if tc := t.GetTrackChange(); tc != nil && isDeletion(tc.ChangeType) {
+			attrs := []string{}
+			if t.Content != strings.TrimSpace(t.Content) || strings.ContainsAny(t.Content, "\t\n") {
+				attrs = []string{"xml:space", "preserve"}
+			}
+			xw.Start("w:delText", attrs...)
+			xw.Text(t.Content)
+			xw.End()
+		} else {
+			xw.WT(t.Content)
+		}
+		xw.End()
+	})
 	if !inline {
 		xw.End()
 	}
+}
+
+func isDeletion(changeType string) bool {
+	switch strings.ToLower(changeType) {
+	case "del", "delete", "deletion":
+		return true
+	default:
+		return false
+	}
+}
+
+func (w *word2007Writer) writeTrackedRun(xw *common.XMLWriter, tc *element.TrackChange, inner func()) {
+	if tc == nil || tc.ChangeType == "" {
+		inner()
+		return
+	}
+	tag := "w:ins"
+	if isDeletion(tc.ChangeType) {
+		tag = "w:del"
+	}
+	w.revIndex++
+	attrs := []string{"w:id", itoa(w.revIndex)}
+	if tc.Author != "" {
+		attrs = append(attrs, "w:author", tc.Author)
+	}
+	if tc.Date != "" {
+		attrs = append(attrs, "w:date", tc.Date)
+	}
+	xw.Start(tag, attrs...)
+	inner()
+	xw.End()
 }
 
 func (w *word2007Writer) writeTextRun(xw *common.XMLWriter, tr *element.TextRun) {

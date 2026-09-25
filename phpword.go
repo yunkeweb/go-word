@@ -113,12 +113,26 @@ func (d *Document) GetCharts() []*element.Chart {
 	return out
 }
 
-// GetComments returns comment elements.
+// GetComments returns comment elements, including those attached as ranges.
 func (d *Document) GetComments() []*element.Comment {
+	seen := map[*element.Comment]bool{}
 	var out []*element.Comment
+	add := func(c *element.Comment) {
+		if c == nil || seen[c] {
+			return
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
 	walkDocument(d, func(el element.Element) {
 		if t, ok := el.(*element.Comment); ok {
-			out = append(out, t)
+			add(t)
+		}
+		if g, ok := el.(interface{ GetCommentRangeStart() *element.Comment }); ok {
+			add(g.GetCommentRangeStart())
+		}
+		if g, ok := el.(interface{ GetCommentRangeEnd() *element.Comment }); ok {
+			add(g.GetCommentRangeEnd())
 		}
 	})
 	return out
@@ -152,6 +166,13 @@ func (d *Document) AddSection(st ...any) *element.Section {
 	sec := element.NewSection(len(d.sections)+1, s)
 	d.sections = append(d.sections, sec)
 	return sec
+}
+
+func (d *Document) lastOrNewSection() *element.Section {
+	if len(d.sections) == 0 {
+		return d.AddSection()
+	}
+	return d.sections[len(d.sections)-1]
 }
 
 // SortSections sorts sections with the given comparison.

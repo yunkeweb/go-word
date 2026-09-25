@@ -34,12 +34,12 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 - **Template fill** — `${variable}` placeholders, nested `${block}` loops, `${if}` / `${endif}` clipping, merged-cell row cloning, images and charts
 - **Streaming writer** — `NewStreamWriter` writes paragraphs and tables into the ZIP stream as they are produced
 - **Memory pooling** — `sync.Pool` reuses buffers, XML writers, and core style structs
-- **More** — lists, charts, footnotes/endnotes, HTML import, document properties
+- **More** — lists, charts, footnotes/endnotes, Markdown/HTML import, comments, track changes, document properties
 
 ### Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.3.0
+go get github.com/yunkeweb/go-word@v0.4.0
 ```
 
 Requires **Go 1.21+**.
@@ -130,6 +130,12 @@ func main() {
 
 `Document.Save` and `Document.WriteTo` also stream `word/document.xml` into the ZIP package.
 
+### What's new in v0.4.0
+
+- **Charts & DrawingML** — `AddChart` for bar, column, line, and pie charts; writes `word/charts/chartN.xml` plus Content Types and relationships
+- **Markdown / HTML import** — `AddMarkdown` and `AddHTML` turn headings, bold/italic/underline, lists, and code blocks into native Word elements
+- **Comments & track changes** — `CommentOn` writes `word/comments.xml`; `EnableTrackChanges`, `AddInsertion`, and `AddDeletion` emit `w:ins` / `w:del`
+
 ### What's new in v0.3.0
 
 - **Nested block loops** — `${block_a}` may contain `${block_b}`; `CloneNestedBlock` fills hierarchical lists
@@ -174,12 +180,12 @@ GNU Lesser General Public License version 3, same family as PHPWord. See [LICENS
 - **模板变量** — `${variable}` 占位符、嵌套 `${block}` 循环、`${if}` / `${endif}` 裁剪、合并单元格行克隆，以及图片与图表
 - **流式写入** — `NewStreamWriter` 边生成边写入 ZIP 流中的段落与表格
 - **对象池** — 通过 `sync.Pool` 复用缓冲区、XML 写入器与核心样式结构
-- **更多** — 列表、图表、脚注/尾注、HTML 导入、文档属性
+- **更多** — 列表、图表、脚注/尾注、Markdown/HTML 导入、批注、修订模式、文档属性
 
 ### 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.3.0
+go get github.com/yunkeweb/go-word@v0.4.0
 ```
 
 需要 **Go 1.21** 或更高版本。
@@ -269,6 +275,12 @@ func main() {
 ```
 
 `Document.Save` 与 `Document.WriteTo` 同样将 `word/document.xml` 流式写入 ZIP 包。
+
+### v0.4.0 更新
+
+- **图表与 DrawingML**：`AddChart` 支持柱状、条形、折线、饼图，写入 `word/charts/chartN.xml` 并注册 Content Types 与关系
+- **Markdown / HTML 导入**：`AddMarkdown` 与 `AddHTML` 将标题、加粗/斜体/下划线、列表、代码块转为原生 Word 元素
+- **批注与修订**：`CommentOn` 生成 `word/comments.xml`；`EnableTrackChanges`、`AddInsertion`、`AddDeletion` 输出 `w:ins` / `w:del`
 
 ### v0.3.0 更新
 

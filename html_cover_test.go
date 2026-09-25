@@ -116,4 +116,11 @@ func TestPrepareHTML(t *testing.T) {
 	if strings.Count(strings.ToLower(s3), "<body") != 1 {
 		t.Fatalf("%s", s3)
 	}
+	s4 := prepareHTML("<p>a\nb</p><pre>line1\nline2</pre>", false)
+	if strings.Contains(s4, "<p>a\nb</p>") {
+		t.Fatalf("paragraph newline kept: %s", s4)
+	}
+	if !strings.Contains(s4, "line1\nline2") {
+		t.Fatalf("pre newline lost: %s", s4)
+	}
 }

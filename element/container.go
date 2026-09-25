@@ -329,6 +329,41 @@ func (c *Container) AddComment(author, initials, date string) *Comment {
 	return cm
 }
 
+// CommentOn adds visible text annotated with a comment (author, body).
+// extras is optional initials then date (ISO-8601).
+func (c *Container) CommentOn(text, body, author string, extras ...string) *Text {
+	initials, date := "", ""
+	if len(extras) > 0 {
+		initials = extras[0]
+	}
+	if len(extras) > 1 {
+		date = extras[1]
+	}
+	cm := &Comment{Author: author, Initials: initials, Date: date}
+	cm.Kind = "Comment"
+	if body != "" {
+		cm.AddText(body)
+	}
+	tx := c.AddText(text)
+	tx.SetCommentRangeStart(cm)
+	tx.SetCommentRangeEnd(cm)
+	return tx
+}
+
+// AddInsertion appends text marked as a tracked insertion (w:ins).
+func (c *Container) AddInsertion(text, author, date string, styles ...any) *Text {
+	tx := c.AddText(text, styles...)
+	tx.SetChangeInfo("ins", author, date)
+	return tx
+}
+
+// AddDeletion appends text marked as a tracked deletion (w:del).
+func (c *Container) AddDeletion(text, author, date string, styles ...any) *Text {
+	tx := c.AddText(text, styles...)
+	tx.SetChangeInfo("del", author, date)
+	return tx
+}
+
 // AddObject is the deprecated PHPWord alias for AddOLEObject.
 func (c *Container) AddObject(source string, styles ...any) *OLEObject {
 	return c.AddOLEObject(source, styles...)

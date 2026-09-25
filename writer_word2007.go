@@ -35,6 +35,7 @@ type word2007Writer struct {
 	chartIndex   int
 	commentIndex int
 	oleIndex     int
+	revIndex     int
 }
 
 type pkgChart struct {
@@ -248,6 +249,7 @@ func (w *word2007Writer) prepare() error {
 	w.chartIndex = 0
 	w.commentIndex = 0
 	w.oleIndex = 0
+	w.revIndex = 0
 	w.doc.titles = nil
 
 	w.addRel(ooxml.NSOfficeRelStyles, "styles.xml", "")
@@ -292,11 +294,15 @@ func (w *word2007Writer) prepare() error {
 			v.RelationID = relIDNum(id)
 			w.charts = append(w.charts, pkgChart{RelID: id, Name: "word/" + name, El: v})
 		case *element.Comment:
-			w.commentIndex++
-			v.CommentID = w.commentIndex
-			w.comments = append(w.comments, v)
+			w.registerComment(v)
 		case *element.OLEObject:
 			w.registerOLE(v)
+		}
+		if g, ok := el.(interface{ GetCommentRangeStart() *element.Comment }); ok {
+			w.registerComment(g.GetCommentRangeStart())
+		}
+		if g, ok := el.(interface{ GetCommentRangeEnd() *element.Comment }); ok {
+			w.registerComment(g.GetCommentRangeEnd())
 		}
 	})
 	w.doc.footnotes = notes
@@ -311,6 +317,15 @@ func (w *word2007Writer) prepare() error {
 		w.addRel(ooxml.NSOfficeRelComments, "comments.xml", "")
 	}
 	return nil
+}
+
+func (w *word2007Writer) registerComment(c *element.Comment) {
+	if c == nil || c.CommentID > 0 {
+		return
+	}
+	w.commentIndex++
+	c.CommentID = w.commentIndex
+	w.comments = append(w.comments, c)
 }
 
 func (w *word2007Writer) registerOLE(o *element.OLEObject) {

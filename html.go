@@ -46,6 +46,11 @@ func AddHTML(dst htmlContainer, html string, fullHTML ...bool) error {
 	return nil
 }
 
+// AddHTML parses HTML into the last (or a new) section.
+func (d *Document) AddHTML(htmlText string) error {
+	return AddHTML(d.lastOrNewSection(), htmlText)
+}
+
 type htmlNode struct {
 	tag  string
 	attr map[string]string
@@ -58,11 +63,20 @@ type htmlStyle struct {
 	para style.Paragraph
 }
 
+var (
+	htmlVoidRe = regexp.MustCompile(`(?i)<(br|img|hr|input)(\s[^>]*)?>`)
+	htmlPreRe  = regexp.MustCompile(`(?is)<pre\b[^>]*>.*?</pre>`)
+)
+
 func prepareHTML(s string, full bool) string {
 	s = strings.ReplaceAll(s, "\r", "")
+	const nlMark = "\x00PRENL\x00"
+	s = htmlPreRe.ReplaceAllStringFunc(s, func(m string) string {
+		return strings.ReplaceAll(m, "\n", nlMark)
+	})
 	s = strings.ReplaceAll(s, "\n", "")
-	void := regexp.MustCompile(`(?i)<(br|img|hr|input)(\s[^>]*)?>`)
-	s = void.ReplaceAllStringFunc(s, func(m string) string {
+	s = strings.ReplaceAll(s, nlMark, "\n")
+	s = htmlVoidRe.ReplaceAllStringFunc(s, func(m string) string {
 		if strings.HasSuffix(strings.TrimSpace(m), "/>") {
 			return m
 		}
@@ -100,7 +114,7 @@ func decodeHTML(dec *xml.Decoder) (*htmlNode, error) {
 			}
 		case xml.CharData:
 			text := string(t)
-			if strings.TrimSpace(text) == "" && !strings.Contains(text, " ") {
+			if strings.TrimSpace(text) == "" && !strings.ContainsAny(text, " \n") {
 				continue
 			}
 			parent := stack[len(stack)-1]
@@ -125,6 +139,25 @@ func parseHTMLNode(n *htmlNode, dst htmlContainer, st htmlStyle) {
 		for _, k := range n.kids {
 			parseInline(k, tr, st)
 		}
+	case "pre":
+		font := st.font
+		font.Name = "Courier New"
+		for _, line := range strings.Split(collectText(n), "\n") {
+			dst.AddText(line, font, st.para)
+		}
+	case "blockquote":
+		para := st.para
+		if para.Indentation.Left == 0 {
+			para.Indentation.Left = 720
+		}
+		tr := dst.AddTextRun(para)
+		for _, k := range n.kids {
+			parseInline(k, tr, st)
+		}
+	case "code":
+		font := st.font
+		font.Name = "Courier New"
+		dst.AddText(collectText(n), font, st.para)
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		depth, _ := strconv.Atoi(n.tag[1:])
 		dst.AddTitle(collectText(n), depth)
@@ -176,6 +209,15 @@ func parseInline(n *htmlNode, tr *element.TextRun, st htmlStyle) {
 		}
 	case "br":
 		tr.AddText("\n", st.font)
+	case "code":
+		font := st.font
+		font.Name = "Courier New"
+		if n.text != "" {
+			tr.AddText(n.text, font)
+		}
+		for _, k := range n.kids {
+			parseInline(k, tr, htmlStyle{font: font, para: st.para})
+		}
 	case "a":
 		href := n.attr["href"]
 		tr.AddLink(href, collectText(n), st.font)
