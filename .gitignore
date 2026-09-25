@@ -1,0 +1,29 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test / example output
+*.test
+*.docx
+*.html
+*.odt
+*.rtf
+!testdata/*.docx
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+grok.md
+GROK.md
+
+# Coverage
+coverage.out
+coverage.html
