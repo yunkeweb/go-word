@@ -1,8 +1,38 @@
-# 流式解析器
+# O(1) 流式提取器
 
 `StreamExtractText` 与 `StreamExtractImages` 使用 `encoding/xml.Decoder` 扫描 `.docx` ZIP。每个段落缓冲在回调后丢弃，因此相对文档体积的额外内存为 **O(1)**。
 
-`os.File` 是带尺寸的 `io.ReaderAt`，提取器可以直接映射 ZIP，不必把整个包拷进内存。普通 `io.Reader` 会先缓冲。第二次遍历前请 `Seek` 回起点或重新打开文件。
+`os.File` 是带尺寸的 `io.ReaderAt`，提取器可以直接映射 ZIP。普通 `io.Reader` 会先缓冲。第二次遍历前请 `Seek` 回起点或重新打开文件。
+
+## StreamExtractText / StreamExtractImages
+
+### 签名
+
+```go
+func StreamExtractText(r io.Reader, fn func(paragraphText string) error) error
+func StreamExtractImages(r io.Reader, fn func(img ImageFile) error) error
+```
+
+### 参数
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `r` | `io.Reader` | `.docx` 字节。优先 `*os.File`。 |
+| `fn` | 回调 | 返回非 nil error 即停止扫描。 |
+
+`ImageFile` 字段：`Name`（ZIP 路径）、`MIME`、`Data`。图片经 `a:blip r:embed` 与 VML `imagedata`，通过 `word/_rels/document.xml.rels` 解析。
+
+## NewStreamWriter
+
+### 签名
+
+```go
+func NewStreamWriter(dest io.Writer) *StreamWriter
+func (s *StreamWriter) WriteParagraph(text string, styles ...any) error
+func (s *StreamWriter) Close() error
+```
+
+第一次写入时打开 `document.xml`。`Close` 结束正文并写出样式、内容类型与关系。非并发安全。
 
 ## 选用哪套 API
 
@@ -12,11 +42,7 @@
 | `StreamExtractText` / `StreamExtractImages` | 否 | O(1) 额外 |
 | `NewStreamWriter` | 增量写出 | 正文 XML 不全量缓冲 |
 
-`ImageFile` 字段：`Name`（ZIP 路径）、`MIME`、`Data`。`StreamExtractImages` 顺着 `a:blip r:embed` 与 VML `imagedata`，经 `word/_rels/document.xml.rels` 取出媒体部件。
-
 ## 完整示例
-
-保存为 `main.go` 后执行 `go run .`。程序写出 `stream-src.docx`，打印每个段落与图片，再用 `NewStreamWriter` 流式写出 1 000 段。
 
 ```go
 package main
@@ -107,4 +133,4 @@ func tinyPNG() []byte {
 }
 ```
 
-10 万段落的跑法见 [`examples/v0.7.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.7.0_demo)。
+[`examples/v0.7.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.7.0_demo) 会流式写出 10 万段。`BenchmarkStreamWriter` 的数字见 [基准测试](./benchmarks)。

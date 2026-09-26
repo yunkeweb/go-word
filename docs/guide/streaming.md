@@ -1,8 +1,38 @@
-# Streaming Parser
+# O(1) Streaming Extractor
 
 `StreamExtractText` and `StreamExtractImages` scan a `.docx` ZIP with `encoding/xml.Decoder`. Paragraph buffers are discarded after each callback, so extra memory stays **O(1)** relative to document size.
 
-`os.File` is a sized `io.ReaderAt`, so the extractor maps the ZIP without copying the whole package into memory. A plain `io.Reader` is buffered first. Rewind or reopen the file before a second pass.
+`os.File` is a sized `io.ReaderAt`, so the extractor maps the ZIP without copying the whole package. A plain `io.Reader` is buffered first. Rewind or reopen the file before a second pass.
+
+## StreamExtractText / StreamExtractImages
+
+### Signature
+
+```go
+func StreamExtractText(r io.Reader, fn func(paragraphText string) error) error
+func StreamExtractImages(r io.Reader, fn func(img ImageFile) error) error
+```
+
+### Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `r` | `io.Reader` | `.docx` bytes. `*os.File` is preferred. |
+| `fn` | callback | Return a non-nil error to stop the scan. |
+
+`ImageFile` fields: `Name` (ZIP path), `MIME`, `Data`. Images are resolved through `a:blip r:embed` and VML `imagedata` via `word/_rels/document.xml.rels`.
+
+## NewStreamWriter
+
+### Signature
+
+```go
+func NewStreamWriter(dest io.Writer) *StreamWriter
+func (s *StreamWriter) WriteParagraph(text string, styles ...any) error
+func (s *StreamWriter) Close() error
+```
+
+`document.xml` opens on the first write. `Close` finishes the body and emits styles, content types, and relationships. Not safe for concurrent use.
 
 ## When to use which API
 
@@ -12,11 +42,7 @@
 | `StreamExtractText` / `StreamExtractImages` | No | O(1) extra |
 | `NewStreamWriter` | Writes incrementally | Body XML is not fully buffered |
 
-`ImageFile` fields: `Name` (ZIP path), `MIME`, `Data`. `StreamExtractImages` follows `a:blip r:embed` and VML `imagedata` through `word/_rels/document.xml.rels`.
-
 ## Complete example
-
-Save as `main.go` and run `go run .`. The program writes `stream-src.docx`, prints every paragraph and image, then streams 1 000 paragraphs through `NewStreamWriter`.
 
 ```go
 package main
@@ -107,4 +133,4 @@ func tinyPNG() []byte {
 }
 ```
 
-See [`examples/v0.7.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.7.0_demo) for a 100 000-paragraph run.
+[`examples/v0.7.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.7.0_demo) streams 100 000 paragraphs. Numbers for `BenchmarkStreamWriter` are on [Benchmarks](./benchmarks).

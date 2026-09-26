@@ -1,13 +1,26 @@
-# Office Math (OMML)
+# LaTeX → OMML (AddMath)
 
-`AddMath` parses a basic LaTeX string and writes **Office Math ML** (`m:oMathPara` / `m:oMath`). Microsoft Word opens the result as a native equation you can double-click to edit.
+`AddMath` parses a basic LaTeX string and writes **Office Math ML**. Microsoft Word opens the result as a native equation you can double-click to edit — the same editor as Insert → Equation.
 
-Available on `Document`, `Section`, and `Paragraph` (`TextRun`):
+Display math is wrapped in `m:oMathPara` inside a `w:p`. Inline math is a sibling of `w:r` inside the current paragraph.
 
-- Display math is wrapped in `m:oMathPara` inside a `w:p`.
-- Inline math is a sibling of `w:r` inside the current paragraph.
+## AddMath
 
-## Supported LaTeX
+### Signature
+
+```go
+func (d *Document) AddMath(formula string) *element.Formula
+func (c *Container) AddMath(formula string) *Formula
+func (p *TextRun) AddMath(formula string) *Formula
+```
+
+### Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `formula` | `string` | LaTeX subset. Unknown tokens become identifiers so Word still opens the file. |
+
+### Supported LaTeX
 
 | Input | OMML |
 | --- | --- |
@@ -17,11 +30,19 @@ Available on `Document`, `Section`, and `Paragraph` (`TextRun`):
 | `(a+b)` or `\left( ... \right)` | `m:d` |
 | `\alpha` `\pi` `\times` `\leq` `\infty` `\sum` `\int` | Unicode identifiers |
 
-Lower-level trees live in `github.com/yunkeweb/go-word/pkg/math` (`ParseLaTeX`, `WriteOMML`, `WriteOMath`) if you need to serialize OMML by hand.
+## pkg/math
+
+### Signature
+
+```go
+func ParseLaTeX(src string) (*Math, error)
+func WriteOMML(m *Math) ([]byte, error)  // display: m:oMathPara
+func WriteOMath(m *Math) ([]byte, error) // inline: m:oMath
+```
+
+Use these when you need the OMML bytes without a `Document`.
 
 ## Complete example
-
-Save as `main.go` and run `go run .`. The file `omml.docx` opens in Microsoft Word without a repair dialog.
 
 ```go
 package main
@@ -38,17 +59,11 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	doc.SetDefaultAsianFontName("Microsoft YaHei")
-	doc.SetDefaultFontSize(11)
-
-	info := doc.GetDocInfo()
-	info.Title = "Office Math (OMML)"
-	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
 	sec.AddTitle("Office Math (OMML)", 1)
-	sec.AddText("Display equations occupy their own paragraph (m:oMathPara). Inline equations sit next to w:r runs.")
+	sec.AddText("Display equations occupy their own paragraph (m:oMathPara).")
 
-	sec.AddTitle("Fractions, roots, superscripts", 2)
 	sec.AddText("Fraction:")
 	sec.AddMath(`\frac{a}{b}`)
 	sec.AddText("Pythagoras:")
@@ -58,7 +73,6 @@ func main() {
 	sec.AddText("Delimiter:")
 	sec.AddMath(`\left( x+1 \right)`)
 
-	sec.AddTitle("Inline math", 2)
 	p := sec.AddTextRun()
 	p.AddText("The identity ")
 	p.AddMath(`e^{i\pi} + 1 = 0`)
@@ -80,13 +94,8 @@ func main() {
 }
 ```
 
-OpenXML produced by this program:
+### What Word shows
 
-| Feature | Node |
-| --- | --- |
-| Display formula | `w:p` / `m:oMathPara` / `m:oMath` / `m:f` |
-| Superscript | `m:sSup` |
-| Radical | `m:rad` |
-| Inline formula | `m:oMath` beside `w:r` |
+Each display formula is a centered, editable equation. Double-click `\frac{a}{b}` and Word opens the linear/professional equation editor with a stacked fraction. The Euler identity stays on one line with the words around it. There is no OLE object and no image fallback.
 
-See [`examples/v0.8.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo) and the academic report in [Examples & Recipes](./examples).
+A two-column academic report that mixes these formulas with `SetColumns` lives in the [v0.8.0 demo](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo).

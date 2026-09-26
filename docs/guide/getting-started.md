@@ -1,20 +1,35 @@
-# Quick Start & Installation
+# Quick Start
 
-GoWord writes native **OpenXML Word 2007 (`.docx`)** packages. The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `TemplateProcessor`) with idiomatic Go types and `error` returns.
+This page builds one `.docx` that exercises the four features most teams touch on day one: a native Office Math formula, a DrawingML shape, a two-column section, and `Save`.
 
-Requires **Go 1.21+**. License: [GNU LGPL v3](https://github.com/yunkeweb/go-word/blob/main/LICENSE).
+The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`) with idiomatic Go types and `error` returns.
 
-## Install
+## New / AddSection / Save
 
-```sh
-go get github.com/yunkeweb/go-word@v0.8.0
+### Signature
+
+```go
+func New() *Document
+func (d *Document) AddSection(style ...any) *element.Section
+func (d *Document) Save(filename string) error
 ```
 
-`go.mod` has no third-party `require`. Serialization uses `encoding/xml`; packages use `archive/zip`.
+### Parameters
 
-## First document
+| Name | Type | Description |
+| --- | --- | --- |
+| `style` | `...any` | Optional `style.Section` (page size, margins, orientation, break type). |
+| `filename` | `string` | Destination path. Parent directories must already exist. |
 
-Save as `main.go` and run `go run .`. The file `hello.docx` opens in Microsoft Word without a repair dialog.
+### Notes
+
+- `New` allocates an empty document with Calibri 11 pt as the default run font.
+- `AddSection` appends a `w:sectPr` block. Body elements attach to the returned `*element.Section`.
+- `Save` is `CreateWriter(doc, "Word2007")` plus a file. Relationship IDs (`rIdN`) and media names (`word/media/imageN`) are assigned at write time.
+
+## Complete example
+
+Save as `main.go` and run `go run .`. Microsoft Word opens `hello.docx` without a repair dialog.
 
 ```go
 package main
@@ -63,22 +78,33 @@ func main() {
 }
 ```
 
-OpenXML produced by this program:
+### What Word shows
 
-| Feature | Node |
-| --- | --- |
-| Display formula | `w:p` / `m:oMathPara` / `m:oMath` / `m:f` |
-| Inline formula | `m:oMath` beside `w:r` |
-| Rounded rectangle | `wps:wsp` / `a:prstGeom prst="roundRect"` |
-| Two columns | `w:cols w:num="2" w:space="720" w:sep="1"` |
+| Feature | On screen | OpenXML |
+| --- | --- | --- |
+| Display formula | A centered equation you can double-click | `w:p` / `m:oMathPara` / `m:oMath` / `m:f` |
+| Inline formula | Pythagoras sits in the same line as the label | `m:oMath` beside `w:r` |
+| Rounded rectangle | Blue pill with white “DrawingML” | `wps:wsp` / `a:prstGeom prst="roundRect"` |
+| Two columns | Equal columns with a vertical separator | `w:cols w:num="2" w:space="720" w:sep="1"` |
 
-`Save` streams `word/document.xml` into the ZIP. `CreateWriter(doc, "Word2007")` is the PHPWord-compatible alias.
+## IOFactory aliases
+
+### Signature
+
+```go
+func CreateWriter(doc *Document, name string) (Writer, error)
+func CreateReader(name string) (Reader, error)
+func Load(filename string, readerName ...string) (*Document, error)
+func Open(filePath string) (*Document, error)
+```
+
+`name` is `"Word2007"` (the default). `Load` / `Open` build a full DOM; for O(1) text extraction see [Streaming Parser](./streaming).
 
 ## Next
 
 | Topic | Page |
 | --- | --- |
-| Paragraph, nested table, image, header | [Core DOM](./basics) |
+| How the ZIP is assembled | [Architecture](./architecture) |
+| Paragraphs, tables, images | [Paragraphs & Runs](./paragraph) |
 | LaTeX → Word equations | [Office Math](./math) |
-| Charts and shapes | [DrawingML](./drawing) |
-| Academic report, merger, finance template | [Examples & Recipes](./examples) |
+| Charts | [DrawingML Charts](./charts) |

@@ -1,30 +1,42 @@
-# 文档无损合并
+# 多文档无损合并
 
-`AppendDocument` 将 `src` 的每一个节克隆到 `dst`，并重映射在同一个 OpenXML 包内会冲突的标识符。
+`AppendDocument` 将 `src` 的每一个节克隆到 `dst`，并重映射在同一个 OpenXML 包内会冲突的标识符。结果是一份 ZIP，其中的样式、书签与媒体不会互相覆盖。
+
+## AppendDocument
+
+### 签名
 
 ```go
-err := dst.AppendDocument(src, word.MergeOptions{
-	StylePrefix:    "src_",
-	BookmarkPrefix: "src_",
-	SectionBreak:   "nextPage",
-})
+func (d *Document) AppendDocument(src *Document, opts MergeOptions) error
+
+type MergeOptions struct {
+	StylePrefix    string
+	BookmarkPrefix string
+	SectionBreak   string
+}
 ```
 
-## 重映射范围
+### 参数
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `src` | `*Document` | 源树。`nil` 返回 `word: nil source document`。 |
+| `StylePrefix` | `string` | 冲突段落/表格样式 ID 的前缀。默认 `src_`。 |
+| `BookmarkPrefix` | `string` | 冲突 `w:bookmarkStart` 名的前缀。默认 `src_`。 |
+| `SectionBreak` | `string` | 克隆过来的第一节的分节符。默认 `nextPage`。 |
+
+### 重映射范围
 
 | 标识符 | 行为 |
 | --- | --- |
-| 段落 / 表格 **样式 ID** | 冲突名称加上 `StylePrefix`（`Note` → `src_Note`） |
-| **书签** 名（`w:bookmarkStart`） | 冲突名称加前缀；唯一名称保持不变 |
-| 内部超链接 **锚点** | 更新为新的书签名 |
-| **图片 / 媒体** | 清空 `RelationID`；写出时分配新的 `rId` 与 `word/media/imageN` |
-| 分节符 | 克隆过来的第一节使用 `SectionBreak`（默认 `nextPage`） |
+| 段落 / 表格样式 ID | 冲突名称加上前缀（`Note` → `src_Note`） |
+| 书签名 | 冲突名称加前缀；唯一名称保持不变 |
+| 内部超链接锚点 | 更新为新的书签名 |
+| 图片 / 媒体 | 清空 `RelationID`；写出时分配新的 `rId` 与 `word/media/imageN` |
 
-`rId` 在写出时分配（`word2007Writer.nextRel`），合并后的 ZIP 中两份文档不会共用关系 ID。`src` 为 `nil` 时返回 `word: nil source document`。
+`rId` 在写出时分配（`word2007Writer.nextRel`），合并后的 ZIP 中两份文档不会共用关系 ID。
 
 ## 完整示例
-
-保存为 `main.go` 后执行 `go run .`。`merged.docx` 同时保留两套 `Note` 样式、`shared` / `src_shared` 书签，以及两个 PNG 部件。
 
 ```go
 package main
@@ -81,14 +93,6 @@ func swatch(c color.RGBA) []byte {
 }
 ```
 
-合并之后：
+### Word 中的效果
 
-| 资源 | 隔离结果 |
-| --- | --- |
-| A 的样式 `Note` | 保留 |
-| B 的样式 `Note` | 改写为 `src_Note` |
-| A 的书签 `shared` | 保留 |
-| B 的书签 `shared` | 改写为 `src_shared` |
-| 图片 | `word/media/image1.png` 与 `image2.png`，各有独立 `rId` |
-
-示例：[`examples/v0.8.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo) 以及 [实战案例库](./examples) 案例 B。
+两页。第 1 页是藏青色色块 + Document A。第 2 页在下一页分节符之后，显示橙色色块，并含可编辑的 `1/2` 分数。styles.xml 同时有 `Note` 与 `src_Note`（段后间距不同）。书签 `shared` 与 `src_shared` 都在。ZIP 中有 `word/media/image1.png` 与 `image2.png`，各有独立 `rId` —— 解压时图片不会互相覆盖。

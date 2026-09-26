@@ -1,30 +1,42 @@
-# Document Merger
+# Lossless Document Merger
 
-`AppendDocument` clones every section of `src` onto `dst`, then remaps identifiers that would collide inside one OpenXML package.
+`AppendDocument` clones every section of `src` onto `dst`, then remaps identifiers that would collide inside one OpenXML package. The result is a single ZIP whose styles, bookmarks, and media do not overwrite each other.
+
+## AppendDocument
+
+### Signature
 
 ```go
-err := dst.AppendDocument(src, word.MergeOptions{
-	StylePrefix:    "src_",
-	BookmarkPrefix: "src_",
-	SectionBreak:   "nextPage",
-})
+func (d *Document) AppendDocument(src *Document, opts MergeOptions) error
+
+type MergeOptions struct {
+	StylePrefix    string
+	BookmarkPrefix string
+	SectionBreak   string
+}
 ```
 
-## What gets remapped
+### Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `src` | `*Document` | Source tree. `nil` returns `word: nil source document`. |
+| `StylePrefix` | `string` | Prefix for colliding paragraph/table style IDs. Default `src_`. |
+| `BookmarkPrefix` | `string` | Prefix for colliding `w:bookmarkStart` names. Default `src_`. |
+| `SectionBreak` | `string` | Break on the first cloned section. Default `nextPage`. |
+
+### What gets remapped
 
 | Identifier | Behaviour |
 | --- | --- |
-| Paragraph / table **style IDs** | Colliding names receive `StylePrefix` (`Note` → `src_Note`) |
-| **Bookmark** names (`w:bookmarkStart`) | Colliding names are prefixed; unique names stay |
-| Internal hyperlink **anchors** | Updated to the new bookmark names |
-| **Images / media** | `RelationID` cleared; writer assigns fresh `rId` and `word/media/imageN` |
-| Section break | First cloned section uses `SectionBreak` (`nextPage` by default) |
+| Paragraph / table style IDs | Colliding names receive the prefix (`Note` → `src_Note`) |
+| Bookmark names | Colliding names are prefixed; unique names stay |
+| Internal hyperlink anchors | Updated to the new bookmark names |
+| Images / media | `RelationID` cleared; writer assigns fresh `rId` and `word/media/imageN` |
 
-`rId`s are allocated at write time (`word2007Writer.nextRel`), so two documents never share a relationship ID in the merged ZIP. A `nil` source returns `word: nil source document`.
+`rId`s are allocated at write time (`word2007Writer.nextRel`), so two documents never share a relationship ID in the merged ZIP.
 
 ## Complete example
-
-Save as `main.go` and run `go run .`. The file `merged.docx` keeps both `Note` styles, `shared` / `src_shared` bookmarks, and two PNG parts.
 
 ```go
 package main
@@ -81,14 +93,6 @@ func swatch(c color.RGBA) []byte {
 }
 ```
 
-After the merge:
+### What Word shows
 
-| Resource | Isolation |
-| --- | --- |
-| Style `Note` on A | Kept |
-| Style `Note` on B | Rewritten to `src_Note` |
-| Bookmark `shared` on A | Kept |
-| Bookmark `shared` on B | Rewritten to `src_shared` |
-| Images | `word/media/image1.png` and `image2.png` with distinct `rId` |
-
-See [`examples/v0.8.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo) and [Examples & Recipes](./examples) Case B.
+Two pages. Page 1 is navy-blue swatch + Document A. Page 2 starts after a next-page section break, shows the orange swatch, and contains an editable `1/2` fraction. Styles.xml contains both `Note` and `src_Note` (different after-spacing). Bookmarks `shared` and `src_shared` both exist. The ZIP has `word/media/image1.png` and `image2.png` with distinct `rId`s — unzipping never overwrites a picture.

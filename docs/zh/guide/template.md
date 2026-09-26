@@ -1,6 +1,21 @@
-# 模板引擎 v2
+# 模板引擎 v2（Pipe 过滤器）
 
-`TemplateProcessor` 按 PHPWord 的方式填充已有 `.docx`：在 `word/document.xml`（及相关部件）中替换 `${placeholders}`。`NewTemplateProcessorBytes` 可以直接填充刚生成的文档，因此不必随仓库分发 `.docx` 模板文件。
+`TemplateProcessor` 按 PHPWord 的方式填充已有 `.docx`：在 `word/document.xml`（及相关部件）中替换 `${placeholders}`。`NewTemplateProcessorBytes` 可以直接填充刚生成的文档，因此不必随仓库分发 `.docx` 模板。
+
+## 构造与赋值
+
+### 签名
+
+```go
+func NewTemplateProcessor(filename string) (*TemplateProcessor, error)
+func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error)
+func (t *TemplateProcessor) SetValue(search, replace string)
+func (t *TemplateProcessor) SetValues(values map[string]string)
+func (t *TemplateProcessor) Save(filename string) error
+func (t *TemplateProcessor) Bytes() ([]byte, error)
+```
+
+每个 `${...}` 应落在同一个 `w:t`。若 Word 把占位符拆到多个 run，处理器就看不到 token。
 
 ## Pipe 过滤器
 
@@ -13,11 +28,28 @@
 | `truncate:N` | 截到 N 个 rune |
 | `default:fallback` | 空值时替换 |
 | `formatDate:2006-01-02` | 解析/格式化日期 |
-| `formatCurrency:USD` | 数值货币（参数作为前缀） |
+| `formatCurrency:¥` | 数值货币（参数作为前缀） |
 
-额外过滤器通过 `word.RegisterTemplateFilter` 注册。
+### 签名
 
-## 块、嵌套循环、条件
+```go
+func RegisterTemplateFilter(name string, fn func(in any, args ...string) string)
+```
+
+## 块与条件
+
+### 签名
+
+```go
+func (t *TemplateProcessor) CloneBlock(blockName string, count int) error
+func (t *TemplateProcessor) CloneBlockAndSetValues(blockName string, values []map[string]string) error
+func (t *TemplateProcessor) CloneNestedBlock(blockName string, items []BlockData) error
+func (t *TemplateProcessor) SetCondition(name string, keep bool) error
+func (t *TemplateProcessor) SetConditions(conds map[string]bool) error
+func (t *TemplateProcessor) ApplyConditionsFromValues(values map[string]string) error
+```
+
+`BlockData` 字段：`Values`、`Blocks`（嵌套命名克隆）、`If`（实例级条件）。
 
 ```
 ${items}
@@ -27,18 +59,11 @@ ${/items}
 ${if paid}Thank you.${endif}
 ```
 
-- `${block}` / `${/block}` — `CloneBlock`、`CloneBlockAndSetValues`、`CloneNestedBlock`
-- `${block_a}` 可以包含 `${block_b}`。嵌套标记会按克隆编号索引（`${inner#1}`）。
-- `${if name}` / `${endif}` — `SetCondition` / `SetConditions`。二元比较（`==`、`!=`、`>`、`<`、`>=`、`<=`）对照 `SetValue` 求值。
-- `CloneRow` / `DeleteRow` 会把 `w:vMerge` 的 restart/continue 组以及 `gridSpan` 一起克隆。
+二元比较（`==`、`!=`、`>`、`<`、`>=`、`<=`）对照 `SetValue` 求值。为假的 `${if}` 会裁掉覆盖的段落或表格行。`ApplyConditionsFromValues` 把空 / `0` / `false` / `no` / `off` 视为假。
 
-`BlockData` 字段：`Values`、`Blocks`（嵌套命名克隆）、`If`（实例级条件）。
-
-图片与图表通过 `SetImageValue`、`SetImageValueBytes`、`SetChart` 注入。
+`CloneRow` / `DeleteRow` 会把 `w:vMerge` 组与 `gridSpan` 一起克隆。图片用 `SetImageValue` / `SetImageValueBytes` 注入；图表用 `SetChart`。
 
 ## 完整示例
-
-保存为 `main.go` 后执行 `go run .`。程序在内存中构建模板，填充管道 / 块 / 条件，写出 `template-v2.docx`。
 
 ```go
 package main
@@ -100,10 +125,4 @@ func main() {
 }
 ```
 
-OpenXML 注意：
-
-- 占位符写在 `w:t` 中。每个 `${...}` 应落在同一个 run 内，避免 Word 把 token 拆到多个 `w:r`。
-- `CloneBlock` 复制开闭宏之间的 XML，再给嵌套宏加上 `#n` 后缀。
-- 为假的 `${if}` 会裁掉覆盖的段落（或表格行）。`ApplyConditionsFromValues` 把空 / `0` / `false` / `no` / `off` 视为假。
-
-财务 / 合同批量导出见 [实战案例库](./examples) 案例 C。
+Word 中显示 `ALICE`、`shanghai`、`GO-WORD`、截断后的简介、`2026-09-26`、`¥1999.50`、`N/A`、成人行、两行明细（第一行带 OVERDUE）以及感谢句。未成年行已被裁掉。

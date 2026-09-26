@@ -2,6 +2,21 @@
 
 `TemplateProcessor` fills an existing `.docx` the same way PHPWord does: `${placeholders}` inside `word/document.xml` (and related parts). `NewTemplateProcessorBytes` fills a document you just generated, so you never have to ship a `.docx` template file.
 
+## Constructors and values
+
+### Signature
+
+```go
+func NewTemplateProcessor(filename string) (*TemplateProcessor, error)
+func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error)
+func (t *TemplateProcessor) SetValue(search, replace string)
+func (t *TemplateProcessor) SetValues(values map[string]string)
+func (t *TemplateProcessor) Save(filename string) error
+func (t *TemplateProcessor) Bytes() ([]byte, error)
+```
+
+Keep each `${...}` inside a single `w:t`. If Word splits a placeholder across runs, the processor will not see the token.
+
 ## Pipe filters
 
 Chained filters use `${var | filter}` or `${var | filter:arg}`:
@@ -13,11 +28,28 @@ Chained filters use `${var | filter}` or `${var | filter:arg}`:
 | `truncate:N` | Cut to N runes |
 | `default:fallback` | Substitute when empty |
 | `formatDate:2006-01-02` | Parse/format dates |
-| `formatCurrency:USD` | Numeric currency (prefix is the argument) |
+| `formatCurrency:¥` | Numeric currency (argument is the prefix) |
 
-Register extra filters with `word.RegisterTemplateFilter`.
+### Signature
 
-## Blocks, nested loops, conditions
+```go
+func RegisterTemplateFilter(name string, fn func(in any, args ...string) string)
+```
+
+## Blocks and conditions
+
+### Signature
+
+```go
+func (t *TemplateProcessor) CloneBlock(blockName string, count int) error
+func (t *TemplateProcessor) CloneBlockAndSetValues(blockName string, values []map[string]string) error
+func (t *TemplateProcessor) CloneNestedBlock(blockName string, items []BlockData) error
+func (t *TemplateProcessor) SetCondition(name string, keep bool) error
+func (t *TemplateProcessor) SetConditions(conds map[string]bool) error
+func (t *TemplateProcessor) ApplyConditionsFromValues(values map[string]string) error
+```
+
+`BlockData` fields: `Values`, `Blocks` (nested named clones), `If` (per-instance conditions).
 
 ```
 ${items}
@@ -27,18 +59,11 @@ ${/items}
 ${if paid}Thank you.${endif}
 ```
 
-- `${block}` / `${/block}` — `CloneBlock`, `CloneBlockAndSetValues`, `CloneNestedBlock`
-- `${block_a}` may contain `${block_b}`. Nested markers are indexed (`${inner#1}`) per clone.
-- `${if name}` / `${endif}` — `SetCondition` / `SetConditions`. Binary comparisons (`==`, `!=`, `>`, `<`, `>=`, `<=`) evaluate against `SetValue`.
-- `CloneRow` / `DeleteRow` keep `w:vMerge` restart/continue groups and `gridSpan` together.
+Binary comparisons (`==`, `!=`, `>`, `<`, `>=`, `<=`) evaluate against `SetValue`. False `${if}` clips covering paragraphs or table rows. Empty / `0` / `false` / `no` / `off` are false for `ApplyConditionsFromValues`.
 
-`BlockData` fields: `Values`, `Blocks` (nested named clones), `If` (per-instance conditions).
-
-Images and charts inject with `SetImageValue`, `SetImageValueBytes`, and `SetChart`.
+`CloneRow` / `DeleteRow` keep `w:vMerge` groups and `gridSpan` together. Images inject with `SetImageValue` / `SetImageValueBytes`; charts with `SetChart`.
 
 ## Complete example
-
-Save as `main.go` and run `go run .`. The program builds the template in memory, fills pipes / blocks / conditions, and writes `template-v2.docx`.
 
 ```go
 package main
@@ -100,10 +125,4 @@ func main() {
 }
 ```
 
-OpenXML notes:
-
-- Placeholders live in `w:t`. Keep each `${...}` inside a single run so Word does not split the token across `w:r` nodes.
-- `CloneBlock` copies the XML between the open and close macros, then suffixes nested macros with `#n`.
-- False `${if}` clips the covering paragraphs (or table rows). Empty / `0` / `false` / `no` / `off` are false for `ApplyConditionsFromValues`.
-
-See [Examples & Recipes](./examples) Case C for a finance / contract batch export.
+Word shows `ALICE`, `shanghai`, `GO-WORD`, a truncated blurb, `2026-09-26`, `¥1999.50`, `N/A`, the adult line, two item rows (the first tagged OVERDUE), and the thank-you sentence. The minor line is gone.

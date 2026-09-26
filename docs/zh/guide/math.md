@@ -1,13 +1,26 @@
-# Office Math 原生公式
+# LaTeX 转 OMML 原生公式
 
-`AddMath` 解析基础 LaTeX 并写出 **Office Math ML**（`m:oMathPara` / `m:oMath`）。Microsoft Word 将其作为原生公式打开，可双击进入公式编辑器。
+`AddMath` 解析基础 LaTeX 并写出 **Office Math ML**。Microsoft Word 将其作为原生公式打开，可双击进入与“插入 → 公式”相同的编辑器。
 
-`Document`、`Section` 与 `Paragraph`（`TextRun`）均可调用：
+展示公式包在段落内的 `m:oMathPara` 中。行内公式是当前段落里 `w:r` 的兄弟节点。
 
-- 展示公式包在段落内的 `m:oMathPara` 中。
-- 行内公式是当前段落里 `w:r` 的兄弟节点。
+## AddMath
 
-## 支持的 LaTeX
+### 签名
+
+```go
+func (d *Document) AddMath(formula string) *element.Formula
+func (c *Container) AddMath(formula string) *Formula
+func (p *TextRun) AddMath(formula string) *Formula
+```
+
+### 参数
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `formula` | `string` | LaTeX 子集。未知 token 会变成标识符，Word 仍能打开文件。 |
+
+### 支持的 LaTeX
 
 | 输入 | OMML |
 | --- | --- |
@@ -17,11 +30,19 @@
 | `(a+b)` 或 `\left( ... \right)` | `m:d` |
 | `\alpha` `\pi` `\times` `\leq` `\infty` `\sum` `\int` | Unicode 标识符 |
 
-如需手写表达式树，可使用 `github.com/yunkeweb/go-word/pkg/math`（`ParseLaTeX`、`WriteOMML`、`WriteOMath`）。
+## pkg/math
+
+### 签名
+
+```go
+func ParseLaTeX(src string) (*Math, error)
+func WriteOMML(m *Math) ([]byte, error)  // 展示：m:oMathPara
+func WriteOMath(m *Math) ([]byte, error) // 行内：m:oMath
+```
+
+需要 OMML 字节、不必构造 `Document` 时使用这些函数。
 
 ## 完整示例
-
-保存为 `main.go` 后执行 `go run .`。生成的 `omml.docx` 可在 Microsoft Word 中直接打开，不会弹出修复对话框。
 
 ```go
 package main
@@ -38,17 +59,11 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	doc.SetDefaultAsianFontName("Microsoft YaHei")
-	doc.SetDefaultFontSize(11)
-
-	info := doc.GetDocInfo()
-	info.Title = "Office Math (OMML)"
-	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
 	sec.AddTitle("Office Math (OMML)", 1)
-	sec.AddText("Display equations occupy their own paragraph (m:oMathPara). Inline equations sit next to w:r runs.")
+	sec.AddText("Display equations occupy their own paragraph (m:oMathPara).")
 
-	sec.AddTitle("Fractions, roots, superscripts", 2)
 	sec.AddText("Fraction:")
 	sec.AddMath(`\frac{a}{b}`)
 	sec.AddText("Pythagoras:")
@@ -58,7 +73,6 @@ func main() {
 	sec.AddText("Delimiter:")
 	sec.AddMath(`\left( x+1 \right)`)
 
-	sec.AddTitle("Inline math", 2)
 	p := sec.AddTextRun()
 	p.AddText("The identity ")
 	p.AddMath(`e^{i\pi} + 1 = 0`)
@@ -80,13 +94,8 @@ func main() {
 }
 ```
 
-本程序写出的 OpenXML：
+### Word 中的效果
 
-| 功能 | 节点 |
-| --- | --- |
-| 展示公式 | `w:p` / `m:oMathPara` / `m:oMath` / `m:f` |
-| 上标 | `m:sSup` |
-| 根号 | `m:rad` |
-| 行内公式 | 与 `w:r` 并列的 `m:oMath` |
+每条展示公式都是可编辑的居中公式。双击 `\frac{a}{b}`，Word 打开线性/专业公式编辑器，显示堆叠分数。欧拉恒等式与周围文字同一行。没有 OLE 对象，也没有图片回退。
 
-示例：[`examples/v0.8.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo)，以及 [实战案例库](./examples) 中的学术报告。
+与 `SetColumns` 混排的学术报告见 [v0.8.0 demo](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo)。
