@@ -1,100 +1,105 @@
-# 基础 DOM 操作
+# 核心 DOM
 
-`Document` 保存命名样式与一个或多个 `Section`。几乎所有正文元素都加在容器上（`Section`、`Header`、`Footer`、`Cell`、`TextRun`）。
+`Document` 保存命名样式与一个或多个 `Section`。正文元素挂在容器上（`Section`、`Header`、`Footer`、`Cell`、`TextRun`）。
 
-## 文档与节
+OpenXML 要点：
 
-```go
-doc := word.New()
-doc.SetDefaultFontName("Calibri")
-doc.SetDefaultFontSize(11)
-
-info := doc.GetDocInfo()
-info.Title = "季度报告"
-info.Creator = "GoWord"
-
-sec := doc.AddSection(style.Section{
-	Orientation: style.OrientationPortrait,
-	MarginTop:   1440, MarginBottom: 1440,
-	MarginLeft:  1440, MarginRight:  1440,
-})
-```
-
-`Save` / `WriteTo` 将 `word/document.xml` 流式写入 ZIP。`IOFactory` 名称与 PHPWord 兼容：
+- 段落是 `w:p` / `w:r` / `w:t`。
+- 表格遵循 `w:tbl` → `w:tr` → `w:tc`。每个 `w:tc` 至少要有一个 `w:p`（单元格无子节点时 GoWord 会补空段落）。
+- 纵向合并用 `w:vMerge w:val="restart"` 再跟 `"continue"`。横向合并用 `w:gridSpan`。
+- 页眉页脚是独立部件（`word/header1.xml`），由 `w:sectPr` 通过 `r:id` 引用。
 
 ```go
-w, err := word.CreateWriter(doc, "Word2007")
-```
+package main
 
-## 段落与富文本
+import (
+	"log"
 
-```go
-doc.AddFontStyle("strong", style.Font{Bold: true, Size: 14, Name: "Calibri"})
-doc.AddParagraphStyle("center", style.Paragraph{Alignment: style.JcCenter})
-doc.AddTitleStyle(1, style.Font{Bold: true, Size: 18}, style.Paragraph{
-	Spacing: style.Spacing{After: 240},
-})
+	"github.com/yunkeweb/go-word"
+	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/style"
+)
 
-sec.AddTitle("Welcome to GoWord", 1)
-sec.AddText("Hello, Word 2007.", "strong", "center")
+func main() {
+	doc := word.New()
+	doc.SetDefaultFontName("Calibri")
+	doc.SetDefaultFontSize(11)
 
-run := sec.AddTextRun()
-run.AddText("Bold ", style.Font{Bold: true})
-run.AddText("and italic.", style.Font{Italic: true})
+	doc.AddFontStyle("strong", style.Font{Bold: true, Size: 14, Name: "Calibri"})
+	doc.AddParagraphStyle("center", style.Paragraph{Alignment: style.JcCenter})
+	doc.AddTitleStyle(1, style.Font{Bold: true, Size: 18}, style.Paragraph{
+		Spacing: style.Spacing{After: 240},
+	})
 
-sec.AddLink("https://github.com/yunkeweb/go-word", "GoWord on GitHub")
-sec.AddBookmark("intro")
-sec.AddPageBreak()
-```
+	sec := doc.AddSection(style.Section{
+		Orientation: style.OrientationPortrait,
+		MarginTop:   1440, MarginBottom: 1440,
+		MarginLeft:  1440, MarginRight:  1440,
+	})
 
-## 表格
+	h := sec.AddHeader()
+	h.AddText("GoWord — core DOM")
+	f := sec.AddFooter()
+	f.AddPreserveText("PAGE")
+	first := sec.AddHeader(element.HeaderFirst)
+	first.AddText("Cover header")
+	doc.SetDifferentFirstPage(true)
 
-```go
-tbl := sec.AddTable(style.Table{Width: 9000})
-hdr := tbl.AddRow()
-hdr.AddCell(4500).AddText("项目")
-hdr.AddCell(4500).AddText("金额")
+	sec.AddTitle("Paragraphs", 1)
+	sec.AddText("Centered heading style.", "strong", "center")
+	run := sec.AddTextRun()
+	run.AddText("Bold ", style.Font{Bold: true})
+	run.AddText("and italic.", style.Font{Italic: true})
+	sec.AddLink("https://github.com/yunkeweb/go-word", "GoWord on GitHub")
+	sec.AddBookmark("intro")
 
-row := tbl.AddRow()
-row.AddCell(4500).AddText("纸张")
-row.AddCell(4500).AddText("12")
-```
+	sec.AddTitle("Table with nested cell", 1)
+	tbl := sec.AddTable(style.Table{Width: 9000})
+	hdr := tbl.AddRow()
+	hdr.AddCell(3000, style.Cell{Shading: style.Shading{Fill: "1F4E79"}}).
+		AddText("Region", style.Font{Bold: true, Color: "FFFFFF"})
+	hdr.AddCell(6000, style.Cell{Shading: style.Shading{Fill: "1F4E79"}}).
+		AddText("Breakdown", style.Font{Bold: true, Color: "FFFFFF"})
 
-单元格本身是容器：嵌套表、图片与公式都可以放进 `Cell`。模板行克隆时会把 `gridSpan` / `vMerge` 合并区域一起带走。
+	row := tbl.AddRow()
+	merged := row.AddCell(3000, style.Cell{VMerge: "restart", VAlign: "center"})
+	merged.AddText("APAC")
+	host := row.AddCell(6000)
+	inner := host.AddTable(style.Table{Width: 5800})
+	ir := inner.AddRow()
+	ir.AddCell(2900).AddText("Hardware")
+	ir.AddCell(2900).AddText("120")
+	ir2 := inner.AddRow()
+	ir2.AddCell(2900).AddText("Software")
+	ir2.AddCell(2900).AddText("80")
 
-## 图片
+	cont := tbl.AddRow()
+	cont.AddCell(3000, style.Cell{VMerge: "continue"})
+	cont.AddCell(6000).AddText("Continued APAC row uses w:vMerge continue.")
 
-```go
-sec.AddImage("photo.png", style.Image{Width: 200, Height: 120})
-sec.AddImageBytes("logo.png", pngBytes, style.Image{Width: 80, Height: 80})
-```
+	span := tbl.AddRow()
+	span.AddCell(9000, style.Cell{GridSpan: 2}).AddText("Footer spans both columns (w:gridSpan=2).")
 
-写出时媒体部件落在 `word/media/imageN.ext`，并分配唯一 `rId`。
+	sec.AddTitle("Image", 1)
+	sec.AddImageBytes("dot.png", tinyPNG(), style.Image{Width: 32, Height: 32, AltText: "swatch"})
 
-## 页眉与页脚
-
-```go
-h := sec.AddHeader()
-h.AddText("GoWord — 内部资料")
-
-f := sec.AddFooter()
-f.AddPreserveText("第 {PAGE} 页 / 共 {NUMPAGES} 页")
-
-sec.AddHeader(element.HeaderFirst) // 首页页眉
-doc.SetDifferentFirstPage(true)
-doc.SetEvenAndOddHeaders(true)
-```
-
-页眉类型：`element.HeaderAuto`（默认）、`HeaderFirst`、`HeaderEven`。
-
-## 加载已有文件
-
-```go
-r, err := word.CreateReader("Word2007")
-if err != nil {
-	log.Fatal(err)
+	if err := doc.Save("core-dom.docx"); err != nil {
+		log.Fatal(err)
+	}
 }
-doc, err := r.Load("input.docx")
+
+func tinyPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+		0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
+		0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	}
+}
 ```
 
-若只需抽取文本或图片、不想构建完整 DOM，见 [流式提取器](./streaming)。
+`SetDifferentFirstPage(true)` 会在 `w:sectPr` 写出 `w:titlePg`，并加上 `w:headerReference w:type="first"`。媒体在保存时写入 `word/media/image1.png`，并分配唯一 `rId`。
+
+加载已有文件：`CreateReader("Word2007").Load("input.docx")`。若只要抽取文本/图片、不建 DOM，见 [流式解析器](./streaming)。

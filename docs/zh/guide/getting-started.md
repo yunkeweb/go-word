@@ -1,4 +1,4 @@
-# 快速开始
+# 快速开始与安装
 
 GoWord 写出原生 **OpenXML Word 2007（`.docx`）** 包。公开 API 沿用 PHPWord 命名（`AddSection`、`AddText`、`IOFactory`、`TemplateProcessor`），并使用惯用的 Go 类型与 `error` 返回。
 
@@ -10,9 +10,11 @@ GoWord 写出原生 **OpenXML Word 2007（`.docx`）** 包。公开 API 沿用 P
 go get github.com/yunkeweb/go-word@v0.8.0
 ```
 
+`go.mod` 没有任何第三方 `require`。序列化走 `encoding/xml`，打包走 `archive/zip`。
+
 ## 第一份文档
 
-创建文档、插入原生 OMML 公式、绘制 DrawingML 形状，并启用两栏排版：
+保存为 `main.go` 后执行 `go run .`。生成的 `hello.docx` 可在 Microsoft Word 中直接打开，不会弹出修复对话框。
 
 ```go
 package main
@@ -27,6 +29,12 @@ import (
 func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
+	doc.SetDefaultAsianFontName("Microsoft YaHei")
+	doc.SetDefaultFontSize(11)
+
+	info := doc.GetDocInfo()
+	info.Title = "GoWord v0.8.0"
+	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
 	sec.AddTitle("GoWord v0.8.0", 1)
@@ -55,16 +63,22 @@ func main() {
 }
 ```
 
+本程序写出的 OpenXML：
+
+| 能力 | 节点 |
+| --- | --- |
+| 展示公式 | `w:p` / `m:oMathPara` / `m:oMath` / `m:f` |
+| 行内公式 | 与 `w:r` 并列的 `m:oMath` |
+| 圆角矩形 | `wps:wsp` / `a:prstGeom prst="roundRect"` |
+| 两栏 | `w:cols w:num="2" w:space="720" w:sep="1"` |
+
+`Save` 将 `word/document.xml` 流式写入 ZIP。`CreateWriter(doc, "Word2007")` 是 PHPWord 兼容入口。
+
 ## 下一步
 
 | 主题 | 页面 |
 | --- | --- |
-| 段落、表格、图片、页眉页脚 | [基础 DOM 操作](./basics) |
+| 段落、嵌套表、图片、页眉 | [核心 DOM](./basics) |
 | LaTeX → Word 公式 | [Office Math](./math) |
-| 形状与图表 | [DrawingML 图表与形状](./drawing) |
-| \(O(1)\) ZIP 提取 | [流式提取器](./streaming) |
-| `${block}` / `${if}` / 管道 | [模板引擎 v2](./template) |
-| 拼接文档 | [文档无损合并](./merger) |
-| 分栏、水印、保护、目录 | [高级排版与保护](./layout) |
-
-可运行示例见 [`examples/`](https://github.com/yunkeweb/go-word/tree/main/examples)。完整 API：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。
+| 图表与形状 | [DrawingML](./drawing) |
+| 学术报告、拼接、财务报表 | [实战案例库](./examples) |

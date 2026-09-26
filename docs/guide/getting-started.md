@@ -1,4 +1,4 @@
-# Quick Start
+# Quick Start & Installation
 
 GoWord writes native **OpenXML Word 2007 (`.docx`)** packages. The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `TemplateProcessor`) with idiomatic Go types and `error` returns.
 
@@ -10,9 +10,11 @@ Requires **Go 1.21+**. License: [GNU LGPL v3](https://github.com/yunkeweb/go-wor
 go get github.com/yunkeweb/go-word@v0.8.0
 ```
 
-## Hello, Word
+`go.mod` has no third-party `require`. Serialization uses `encoding/xml`; packages use `archive/zip`.
 
-Create a document, insert a native OMML formula, draw a DrawingML shape, and enable two-column layout:
+## First document
+
+Save as `main.go` and run `go run .`. The file `hello.docx` opens in Microsoft Word without a repair dialog.
 
 ```go
 package main
@@ -27,6 +29,12 @@ import (
 func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
+	doc.SetDefaultAsianFontName("Microsoft YaHei")
+	doc.SetDefaultFontSize(11)
+
+	info := doc.GetDocInfo()
+	info.Title = "GoWord v0.8.0"
+	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
 	sec.AddTitle("GoWord v0.8.0", 1)
@@ -55,16 +63,22 @@ func main() {
 }
 ```
 
-## Next steps
+OpenXML produced by this program:
+
+| Feature | Node |
+| --- | --- |
+| Display formula | `w:p` / `m:oMathPara` / `m:oMath` / `m:f` |
+| Inline formula | `m:oMath` beside `w:r` |
+| Rounded rectangle | `wps:wsp` / `a:prstGeom prst="roundRect"` |
+| Two columns | `w:cols w:num="2" w:space="720" w:sep="1"` |
+
+`Save` streams `word/document.xml` into the ZIP. `CreateWriter(doc, "Word2007")` is the PHPWord-compatible alias.
+
+## Next
 
 | Topic | Page |
 | --- | --- |
-| Paragraphs, tables, images, headers | [Basic DOM](./basics) |
+| Paragraph, nested table, image, header | [Core DOM](./basics) |
 | LaTeX → Word equations | [Office Math](./math) |
-| Shapes and charts | [DrawingML & Charts](./drawing) |
-| \(O(1)\) ZIP extractors | [Streaming Parser](./streaming) |
-| `${block}` / `${if}` / pipes | [Template Engine v2](./template) |
-| Splice documents | [Document Merger](./merger) |
-| Columns, watermark, protect, TOC | [Advanced Layout](./layout) |
-
-Runnable samples live under [`examples/`](https://github.com/yunkeweb/go-word/tree/main/examples). Full API: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word).
+| Charts and shapes | [DrawingML](./drawing) |
+| Academic report, merger, finance template | [Examples & Recipes](./examples) |
