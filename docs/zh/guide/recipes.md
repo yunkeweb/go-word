@@ -4,15 +4,15 @@
 
 | 案例 | 用到的 API | 输出 |
 | --- | --- | --- |
-| [1. 合同 / 财务报表](#1-合同--财务报表) | 模板 Pipe、`${block}` / `${if}`、嵌套 `w:tbl` | `contract-report.docx` |
-| [2. 学术 / 工程论文排版](#2-学术--工程论文排版) | `AddMath` OMML、`SetColumns`、`AddTOC` | `paper.docx` |
+| [1. 合同与财务报表](#1-合同与财务报表) | 模板 Pipe、`${block}` / `${if}`、嵌套 `w:tbl` | `contract-report.docx` |
+| [2. 学术与工程论文排版](#2-学术与工程论文排版) | `AddMath` OMML、`SetColumns`、`AddTOC` | `paper.docx` |
 | [3. 跨文档无损拼接](#3-跨文档无损拼接) | `AppendDocument` + 样式 / 书签 / `rId` 隔离 | `dossier.docx` |
 
 相关参考：[模板引擎 v2](./template)、[表格](./table)、[Office Math](./math)、[分栏](./columns)、[TOC](./toc)、[文档合并](./merger)。
 
 ---
 
-## 1. 合同 / 财务报表
+## 1. 合同与财务报表 {#1-合同与财务报表}
 
 封面留给法务在 Word 里继续改，P&L 的单元格里再嵌一张表。占位符始终落在同一个 `w:t` 里，因为模板由 GoWord 生成（`NewTemplateProcessorBytes` 不会碰到 GUI 把 `${name}` 拆开的情况）。
 
@@ -150,7 +150,7 @@ func main() {
 
 ---
 
-## 2. 学术 / 工程论文排版
+## 2. 学术与工程论文排版 {#2-学术与工程论文排版}
 
 扉页与目录保持单栏。正文节写成两等栏（`w:cols w:num="2" w:sep="1"`），公式是原生 OMML，审稿人双击即可编辑，而不是打开一张图。标题走 `AddTitle`，这样 `AddTOC` 才有 `w:outlineLvl` 可收集。
 
@@ -238,7 +238,7 @@ func main() {
 
 ---
 
-## 3. 跨文档无损拼接
+## 3. 跨文档无损拼接 {#3-跨文档无损拼接}
 
 三棵独立撰写的 `.docx` 树（封面信、技术说明、附录）共用样式 ID（`Note`）、书签名（`shared`）和媒体名（`word/media/image1.png`）。`AppendDocument` 重映射这些冲突，合并后的 ZIP 不会覆盖图片或样式定义。
 
