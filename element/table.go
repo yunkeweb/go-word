@@ -1,6 +1,10 @@
 package element
 
-import "github.com/yunkeweb/go-word/style"
+import (
+	"strings"
+
+	"github.com/yunkeweb/go-word/style"
+)
 
 // Table is a table element (PHPWord Element\Table).
 type Table struct {
@@ -146,3 +150,41 @@ func NewCell(width int, st ...any) *Cell {
 	}
 	return c
 }
+
+// SetBorder sets one cell border (side: top, left, bottom, right, or all).
+func (c *Cell) SetBorder(side, borderStyle string, size int, color string) {
+	b := style.Border{Style: borderStyle, Size: size, Color: color}
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "top":
+		c.Style.Borders.Top = b
+	case "left":
+		c.Style.Borders.Left = b
+	case "bottom":
+		c.Style.Borders.Bottom = b
+	case "right":
+		c.Style.Borders.Right = b
+	case "insideh", "inside_h", "inside-h":
+		c.Style.Borders.InsideH = b
+	case "insidev", "inside_v", "inside-v":
+		c.Style.Borders.InsideV = b
+	case "all":
+		c.Style.Borders.Top = b
+		c.Style.Borders.Left = b
+		c.Style.Borders.Bottom = b
+		c.Style.Borders.Right = b
+	}
+}
+
+// SetPadding sets cell inner margins in twips (w:tcMar).
+func (c *Cell) SetPadding(top, left, bottom, right int) {
+	c.Style.PaddingTop = top
+	c.Style.PaddingLeft = left
+	c.Style.PaddingBottom = bottom
+	c.Style.PaddingRight = right
+}
+
+// SetVerticalAlignment sets w:vAlign (top, center, bottom).
+func (c *Cell) SetVerticalAlignment(v string) { c.Style.VAlign = v }
+
+// SetTextDirection sets w:textDirection (lrTb, tbRl, btLr).
+func (c *Cell) SetTextDirection(v string) { c.Style.TextDir = v }

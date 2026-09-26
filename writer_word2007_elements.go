@@ -435,11 +435,16 @@ func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
 		for _, cell := range row.Cells {
 			xw.Start("w:tc")
 			w.writeTcPr(xw, cell)
-			if len(cell.Elements()) == 0 {
+			els := cell.Elements()
+			if len(els) == 0 {
 				xw.Start("w:p")
 				xw.End()
 			} else {
-				w.writeContainer(xw, cell.Elements(), false)
+				w.writeContainer(xw, els, false)
+				if cellNeedsTrailingP(els) {
+					xw.Start("w:p")
+					xw.End()
+				}
 			}
 			xw.End()
 		}
@@ -447,6 +452,18 @@ func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
 		_ = xw.Flush()
 	}
 	xw.End()
+}
+
+func cellNeedsTrailingP(els []element.Element) bool {
+	if len(els) == 0 {
+		return true
+	}
+	switch els[len(els)-1].(type) {
+	case *element.Table, *element.Bookmark:
+		return true
+	default:
+		return false
+	}
 }
 
 func (w *word2007Writer) writeTblPr(xw *common.XMLWriter, st style.Table) {

@@ -29,6 +29,8 @@ type Document struct {
 	charts           []*element.Chart
 	textWatermark    string
 	imageWatermark   []byte
+	extractedImages  []ImageFile
+	imagesLoaded     bool
 }
 
 // PhpWord is an alias for Document, matching the PHP class name.

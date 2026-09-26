@@ -2,6 +2,7 @@ package word
 
 import (
 	"fmt"
+	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -37,6 +38,20 @@ func CreateReader(name string) (Reader, error) {
 	default:
 		return nil, fmt.Errorf("%q is not a valid reader", name)
 	}
+}
+
+// Open loads a .docx from a filesystem path into an in-memory DOM.
+func Open(filePath string) (*Document, error) {
+	return Load(filePath)
+}
+
+// Read loads a .docx from r into an in-memory DOM.
+func Read(r io.Reader) (*Document, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	return LoadBytes(data)
 }
 
 // Load loads a document (PHPWord IOFactory::load).

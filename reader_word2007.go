@@ -1,11 +1,15 @@
 package word
 
 import (
+	"bytes"
 	"encoding/xml"
 	"io"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/metadata"
 	"github.com/yunkeweb/go-word/pkg/common"
 	"github.com/yunkeweb/go-word/style"
 )
@@ -35,29 +39,91 @@ func loadWord2007(zr *common.ZipReader) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+	rels := map[string]string{}
+	if relRaw, err := zr.ReadFile("word/_rels/document.xml.rels"); err == nil {
+		rels = parseRelationshipTargets(relRaw)
+	}
 	sec := doc.AddSection()
-	if err := parseDocumentXML(raw, sec); err != nil {
+	if err := parseDocumentXMLRels(raw, sec, rels); err != nil {
 		return nil, err
+	}
+	if core, err := zr.ReadFile("docProps/core.xml"); err == nil {
+		parseCoreProperties(core, doc.info)
+	}
+	doc.imagesLoaded = true
+	for _, f := range zr.Files() {
+		name := strings.ReplaceAll(f.Name, "\\", "/")
+		lower := strings.ToLower(name)
+		if !strings.HasPrefix(lower, "word/media/") || strings.HasSuffix(name, "/") {
+			continue
+		}
+		data, err := zr.ReadFile(f.Name)
+		if err != nil {
+			return nil, err
+		}
+		base := name
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[i+1:]
+		}
+		ext := ""
+		if i := strings.LastIndex(base, "."); i >= 0 {
+			ext = base[i+1:]
+		}
+		doc.extractedImages = append(doc.extractedImages, ImageFile{
+			Name: base,
+			MIME: mimeForExt(ext),
+			Data: data,
+		})
 	}
 	return doc, nil
 }
 
 func parseDocumentXML(data []byte, sec *element.Section) error {
+	return parseDocumentXMLRels(data, sec, nil)
+}
+
+type tblFrame struct {
+	tbl  *element.Table
+	row  *element.Row
+	cell *element.Cell
+}
+
+func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string) error {
 	dec := xml.NewDecoder(strings.NewReader(string(data)))
 	var (
-		inP, inHyper, inTbl, inTr, inTc bool
-		runBuf                          strings.Builder
-		paraBuf                         strings.Builder
-		hyperTarget                     string
-		hyperText                       strings.Builder
-		tbl                             *element.Table
-		row                             *element.Row
-		cell                            *element.Cell
-		pStyle                          string
-		rStyle                          style.Font
-		bold, italic                    bool
-		color                           string
+		frames        []tblFrame
+		inHyper       bool
+		runBuf        strings.Builder
+		hyperTarget   string
+		hyperInternal bool
+		hyperText     strings.Builder
+		pStyle        string
+		bodyRun       *element.TextRun
+		bold, italic  bool
+		color         string
 	)
+	currentCell := func() *element.Cell {
+		if len(frames) == 0 {
+			return nil
+		}
+		return frames[len(frames)-1].cell
+	}
+	headingDepth := func(name string) int {
+		depth := 1
+		if len(name) > 7 {
+			depth = int(name[7] - '0')
+			if depth < 1 {
+				depth = 1
+			}
+		}
+		return depth
+	}
+	runFont := func() any {
+		if bold || italic || color != "" {
+			return style.Font{Bold: bold, Italic: italic, Color: color}
+		}
+		return nil
+	}
 	flushRun := func() {
 		t := runBuf.String()
 		runBuf.Reset()
@@ -68,53 +134,79 @@ func parseDocumentXML(data []byte, sec *element.Section) error {
 			hyperText.WriteString(t)
 			return
 		}
-		if inTc && cell != nil {
-			f := style.Font{Bold: bold, Italic: italic, Color: color}
-			cell.AddText(t, f)
+		if c := currentCell(); c != nil {
+			c.AddText(t, runFont())
 			return
 		}
-		paraBuf.WriteString(t)
+		if bodyRun == nil {
+			bodyRun = sec.AddTextRun()
+		}
+		bodyRun.AddText(t, runFont())
+	}
+	flushHyperlink := func() {
+		flushRun()
+		target, text, internal := hyperTarget, hyperText.String(), hyperInternal
+		hyperText.Reset()
+		hyperTarget = ""
+		hyperInternal = false
+		inHyper = false
+		if target == "" && text == "" {
+			return
+		}
+		if c := currentCell(); c != nil {
+			c.AddLink(target, text, nil, nil, internal)
+			return
+		}
+		if bodyRun == nil {
+			bodyRun = sec.AddTextRun()
+		}
+		bodyRun.AddLink(target, text, nil, nil, internal)
 	}
 	flushPara := func() {
 		flushRun()
-		text := paraBuf.String()
-		paraBuf.Reset()
-		if inHyper {
-			sec.AddLink(hyperTarget, hyperText.String())
-			hyperText.Reset()
-			hyperTarget = ""
-			inHyper = false
-			return
-		}
-		if text == "" {
-			if pStyle != "" {
-				// empty styled paragraph still skipped
-			}
+		if currentCell() != nil {
 			pStyle = ""
 			return
 		}
-		var font any
-		var para any
-		if bold || italic || color != "" {
-			font = style.Font{Bold: bold, Italic: italic, Color: color}
+		text := ""
+		if bodyRun != nil {
+			text = bodyRun.GetText()
 		}
 		if strings.HasPrefix(pStyle, "Heading") {
-			depth := 1
-			if len(pStyle) > 7 {
-				depth = int(pStyle[7] - '0')
-				if depth < 1 {
-					depth = 1
-				}
+			if bodyRun != nil {
+				sec.RemoveElement(bodyRun)
+				bodyRun = nil
 			}
-			sec.AddTitle(text, depth)
+			if text != "" {
+				sec.AddTitle(text, headingDepth(pStyle))
+			}
 			pStyle = ""
 			bold, italic, color = false, false, ""
 			return
 		}
-		if pStyle != "" {
-			para = pStyle
+		if bodyRun != nil {
+			els := bodyRun.Elements()
+			switch {
+			case len(els) == 0:
+				sec.RemoveElement(bodyRun)
+			case len(els) == 1:
+				if tx, ok := els[0].(*element.Text); ok {
+					sec.RemoveElement(bodyRun)
+					var para any
+					if pStyle != "" {
+						para = pStyle
+					}
+					sec.AddText(tx.Content, tx.FontStyle, para)
+				} else if pStyle != "" {
+					bodyRun.SetParagraphStyle(pStyle)
+				}
+			default:
+				if pStyle != "" {
+					bodyRun.SetParagraphStyle(pStyle)
+				}
+			}
+			bodyRun = nil
 		}
-		sec.AddText(text, font, para)
 		pStyle = ""
 		bold, italic, color = false, false, ""
 	}
@@ -132,31 +224,81 @@ func parseDocumentXML(data []byte, sec *element.Section) error {
 			local := localName(t.Name)
 			switch local {
 			case "p":
-				inP = true
-				paraBuf.Reset()
 				pStyle = ""
+				if currentCell() == nil {
+					bodyRun = sec.AddTextRun()
+				}
 			case "pStyle":
 				pStyle = attr(t, "val")
 			case "hyperlink":
 				flushRun()
 				inHyper = true
-				hyperTarget = attr(t, "id")
-				if hyperTarget == "" {
-					hyperTarget = attr(t, "anchor")
+				hyperInternal = false
+				hyperTarget = attr(t, "anchor")
+				if hyperTarget != "" {
+					hyperInternal = true
+				} else {
+					id := attr(t, "id")
+					if rels != nil && rels[id] != "" {
+						hyperTarget = rels[id]
+					} else {
+						hyperTarget = id
+					}
+				}
+			case "bookmarkStart":
+				name := attr(t, "name")
+				if name == "" {
+					break
+				}
+				if c := currentCell(); c != nil {
+					c.AddBookmark(name)
+				} else if bodyRun != nil {
+					bodyRun.AddBookmark(name)
+				} else {
+					sec.AddBookmark(name)
 				}
 			case "tbl":
-				flushPara()
-				inTbl = true
-				tbl = sec.AddTable()
+				if currentCell() != nil {
+					flushRun()
+				} else {
+					flushPara()
+				}
+				var tbl *element.Table
+				if c := currentCell(); c != nil {
+					tbl = c.AddTable()
+				} else {
+					tbl = sec.AddTable()
+				}
+				frames = append(frames, tblFrame{tbl: tbl})
 			case "tr":
-				if tbl != nil {
-					row = tbl.AddRow()
-					inTr = true
+				if n := len(frames); n > 0 && frames[n-1].tbl != nil {
+					frames[n-1].row = frames[n-1].tbl.AddRow()
 				}
 			case "tc":
-				if row != nil {
-					cell = row.AddCell(0)
-					inTc = true
+				if n := len(frames); n > 0 && frames[n-1].row != nil {
+					frames[n-1].cell = frames[n-1].row.AddCell(0)
+				}
+			case "tcW":
+				if c := currentCell(); c != nil {
+					if w := atoi(attr(t, "w")); w > 0 {
+						c.Width = w
+						c.Style.Width = w
+					}
+					if u := attr(t, "type"); u != "" {
+						c.Style.Unit = u
+					}
+				}
+			case "vAlign":
+				if c := currentCell(); c != nil {
+					if v := attr(t, "val"); v != "" {
+						c.Style.VAlign = v
+					}
+				}
+			case "textDirection":
+				if c := currentCell(); c != nil {
+					if v := attr(t, "val"); v != "" {
+						c.Style.TextDir = v
+					}
 				}
 			case "t":
 				var s string
@@ -176,15 +318,19 @@ func parseDocumentXML(data []byte, sec *element.Section) error {
 				color = attr(t, "val")
 			case "br":
 				if attr(t, "type") == "page" {
-					flushPara()
-					sec.AddPageBreak()
+					if currentCell() != nil {
+						flushRun()
+						currentCell().AddPageBreak()
+					} else {
+						flushPara()
+						sec.AddPageBreak()
+					}
 				}
 			case "drawing", "sectPr":
 				if err := skip(dec, t); err != nil {
 					return err
 				}
 			}
-			_ = rStyle
 		case xml.EndElement:
 			local := localName(t.Name)
 			switch local {
@@ -192,31 +338,129 @@ func parseDocumentXML(data []byte, sec *element.Section) error {
 				flushRun()
 				bold, italic, color = false, false, ""
 			case "p":
-				if inTc {
+				if currentCell() != nil {
 					flushRun()
-					inP = false
 					break
 				}
 				flushPara()
-				inP = false
 			case "hyperlink":
-				inHyper = false
+				flushHyperlink()
 			case "tbl":
-				inTbl = false
-				tbl = nil
+				if n := len(frames); n > 0 {
+					frames = frames[:n-1]
+				}
 			case "tr":
-				inTr = false
-				row = nil
+				if n := len(frames); n > 0 {
+					frames[n-1].row = nil
+				}
 			case "tc":
-				inTc = false
-				cell = nil
+				if n := len(frames); n > 0 {
+					frames[n-1].cell = nil
+				}
 			}
-			_ = inP
-			_ = inTbl
-			_ = inTr
 		}
 	}
 	return nil
+}
+
+func parseRelationshipTargets(data []byte) map[string]string {
+	out := map[string]string{}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		if localName(se.Name) != "Relationship" {
+			continue
+		}
+		id, target := attr(se, "Id"), attr(se, "Target")
+		if id == "" {
+			id = attr(se, "id")
+		}
+		if id != "" && target != "" {
+			out[id] = target
+		}
+	}
+	return out
+}
+
+func parseCoreProperties(data []byte, info *metadata.DocInfo) {
+	if info == nil {
+		return
+	}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var buf strings.Builder
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			buf.Reset()
+		case xml.CharData:
+			buf.Write(t)
+		case xml.EndElement:
+			v := strings.TrimSpace(buf.String())
+			switch localName(t.Name) {
+			case "creator":
+				if v != "" {
+					info.Creator = v
+				}
+			case "lastModifiedBy":
+				if v != "" {
+					info.LastModifiedBy = v
+				}
+			case "title":
+				info.Title = v
+			case "subject":
+				info.Subject = v
+			case "description":
+				info.Description = v
+			case "keywords":
+				info.Keywords = v
+			case "category":
+				info.Category = v
+			case "created":
+				if tm := parseW3Time(v); !tm.IsZero() {
+					info.Created = tm
+				}
+			case "modified":
+				if tm := parseW3Time(v); !tm.IsZero() {
+					info.Modified = tm
+				}
+			}
+			buf.Reset()
+		}
+	}
+}
+
+func parseW3Time(s string) time.Time {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+func atoi(s string) int {
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 func localName(n xml.Name) string {
