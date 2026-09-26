@@ -60,13 +60,39 @@ func indexMacros(s string, n int) string {
 		case "endif":
 			return macro(raw + idx)
 		case "if":
+			field, op, val := parseIfExpr(ident)
+			if op != "" {
+				return macro("if " + field + idx + " " + op + " " + quoteIfValue(val))
+			}
 			return macro("if " + ident + idx)
 		case "endblock":
 			return macro("/" + ident + idx)
 		default:
-			return macro(ident + idx)
+			field, rest := splitFieldRest(ident)
+			if rest != "" {
+				return macro(field + idx + " | " + rest)
+			}
+			return macro(field + idx)
 		}
 	})
+}
+
+func splitFieldRest(ident string) (field, rest string) {
+	field, pipes := splitPipes(ident)
+	if len(pipes) == 0 {
+		return strings.TrimSpace(ident), ""
+	}
+	return field, pipeRest(ident)
+}
+
+func quoteIfValue(val string) string {
+	if val == "" {
+		return `""`
+	}
+	if strings.ContainsAny(val, " \t\"'") {
+		return `"` + strings.ReplaceAll(val, `"`, `\"`) + `"`
+	}
+	return val
 }
 
 func findBlockBounds(xml, blockName string) (openStart, openEnd, closeStart, closeEnd int, ok bool) {
@@ -209,7 +235,7 @@ func (t *TemplateProcessor) applyRemainingIfBlocks() {
 			if !ok {
 				break
 			}
-			t.files[part] = []byte(applyIf(xml, p, false))
+			t.files[part] = []byte(applyIf(xml, p, t.evalIfName(p.name)))
 		}
 	}
 }

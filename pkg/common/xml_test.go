@@ -6,6 +6,18 @@ import (
 	"testing"
 )
 
+func TestEscapeXMLTextNamedEntitiesOnly(t *testing.T) {
+	got := EscapeXMLText(`a&b<c>"d'e`)
+	for _, want := range []string{"&amp;", "&lt;", "&gt;", "&quot;", "&apos;"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %s in %s", want, got)
+		}
+	}
+	if strings.Contains(got, "&#") {
+		t.Fatalf("numeric entity: %s", got)
+	}
+}
+
 func TestXMLWriterAPI(t *testing.T) {
 	w := NewXMLWriter()
 	w.End() // empty stack

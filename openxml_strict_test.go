@@ -198,7 +198,7 @@ func TestOpenXMLPropertyChildOrder(t *testing.T) {
 	})
 	tbl := sec.AddTable(style.Table{
 		Width: 4000, Alignment: style.JcTableCenter, Indent: 100,
-		Layout: "autofit",
+		Layout:        "autofit",
 		CellMarginTop: 40, CellMarginLeft: 40, CellMarginBottom: 40, CellMarginRight: 40,
 		Position: &style.TablePosition{LeftFromText: 10, TblpX: 20},
 		Borders:  style.Borders{Top: style.Border{Style: "single", Size: 4, Color: "000000"}},
@@ -257,7 +257,7 @@ func TestOpenXMLChartSchema(t *testing.T) {
 		}
 	}
 	barKids := innerChildNames(bar, "c:barChart")
-	assertSeq(t, barKids, "c:barDir", "c:grouping", "c:varyColors", "c:ser", "c:axId")
+	assertSeq(t, barKids, "c:barDir", "c:grouping", "c:varyColors", "c:ser", "c:dLbls", "c:axId")
 	if strings.Contains(bar, "<c:overlap") {
 		t.Fatal("clustered bar must not emit c:overlap")
 	}
@@ -268,7 +268,7 @@ func TestOpenXMLChartSchema(t *testing.T) {
 		t.Fatal("pie chart must not emit c:overlap")
 	}
 	serKids := innerChildNames(bar, "c:ser")
-	assertSeq(t, serKids, "c:idx", "c:order", "c:dLbls", "c:cat", "c:val")
+	assertSeq(t, serKids, "c:idx", "c:order", "c:cat", "c:val")
 	axKids := innerChildNames(bar, "c:catAx")
 	assertSeq(t, axKids, "c:axId", "c:scaling", "c:delete", "c:axPos", "c:majorTickMark", "c:crossAx", "c:auto")
 	if !strings.Contains(bar, "<c:v>") {
@@ -277,6 +277,295 @@ func TestOpenXMLChartSchema(t *testing.T) {
 	}
 	if !strings.Contains(bar, "<c:formatCode>General</c:formatCode>") {
 		t.Fatal("numLit formatCode")
+	}
+}
+
+func TestOpenXMLAreaChartChildOrder(t *testing.T) {
+	doc := New()
+	ch := doc.AddChart(ChartTypeArea, []string{"Q1", "Q2"}, []float64{4, 6})
+	ch.Series[0].Name = "Revenue"
+	ch.SetDataLabels(ChartDataLabelOptions{ShowVal: true, ShowCatName: true, Position: DataLabelPosTop})
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := readZipFile(t, raw, "word/charts/chart1.xml")
+	assertWellFormedXML(t, "area", xml)
+	if !strings.Contains(xml, `<c:grouping val="standard"`) {
+		t.Fatal("areaChart grouping must be standard")
+	}
+	areaKids := innerChildNames(xml, "c:areaChart")
+	assertSeq(t, areaKids, "c:grouping", "c:ser", "c:dLbls", "c:axId")
+	areaInner := innerXML(xml, "c:areaChart")
+	if strings.Contains(areaInner, "<c:varyColors") {
+		t.Fatal("minimal areaChart must not emit c:varyColors")
+	}
+	if !strings.Contains(areaInner, "<c:dLbls") {
+		t.Fatal("SetDataLabels must emit c:dLbls")
+	}
+	assertSeq(t, innerChildNames(xml, "c:dLbls"), "c:showLegendKey", "c:showVal", "c:showCatName", "c:showSerName", "c:showPercent")
+	if strings.Contains(innerXML(xml, "c:dLbls"), "showBubbleSize") || strings.Contains(innerXML(xml, "c:dLbls"), "showLeaderLines") {
+		t.Fatal("area dLbls must omit showBubbleSize/showLeaderLines")
+	}
+	if strings.Contains(xml, "<c:dLblPos") {
+		t.Fatal("area dLbls must omit c:dLblPos")
+	}
+	if ids := axIDVals(areaInner); len(ids) != 2 {
+		t.Fatalf("areaChart must have exactly 2 axId, got %v", ids)
+	}
+	if strings.Contains(areaInner, "<c:smooth") || strings.Contains(areaInner, "<c:marker") {
+		t.Fatal("areaChart must not contain line-only c:smooth or c:marker")
+	}
+	serKids := innerChildNames(xml, "c:ser")
+	assertSeq(t, serKids, "c:idx", "c:order", "c:tx", "c:spPr", "c:cat", "c:val")
+	cat := innerXML(xml, "c:cat")
+	if strings.Contains(cat, "<c:numLit") || !strings.Contains(cat, "<c:strLit>") {
+		t.Fatalf("cat must use strLit, got %s", cat)
+	}
+	val := innerXML(xml, "c:val")
+	if !strings.Contains(val, "<c:numLit>") || strings.Contains(val, "<c:strLit") {
+		t.Fatalf("val must use numLit, got %s", val)
+	}
+	fi := strings.Index(val, "<c:formatCode>General</c:formatCode>")
+	pi := strings.Index(val, "<c:ptCount")
+	if fi < 0 || pi < 0 || fi > pi {
+		t.Fatalf("formatCode must precede ptCount in numLit: %s", val)
+	}
+	sp := innerXML(xml, "c:spPr")
+	if !strings.Contains(sp, `<a:srgbClr val="5B9BD5"`) || !strings.Contains(sp, "<a:noFill") {
+		t.Fatalf("area ser spPr: %s", sp)
+	}
+	plot := innerChildNames(xml, "c:plotArea")
+	assertSeq(t, plot, "c:layout", "c:areaChart", "c:catAx", "c:valAx")
+	if strings.Contains(innerXML(xml, "c:plotArea"), "<c:legend") {
+		t.Fatal("legend must not be inside plotArea")
+	}
+	assertChartAxIDsAligned(t, xml)
+}
+
+func TestOpenXMLComboChartAxIDs(t *testing.T) {
+	doc := New()
+	cats := []string{"A", "B"}
+	ch := doc.AddChart(ChartTypeCombo, cats, []float64{10, 20})
+	ch.Series[0].Kind = ChartTypeColumn
+	ch.AddComboSeries(ChartTypeLine, cats, []float64{1, 2}, "Rate", true)
+	ch.SetDataLabels(ChartDataLabelOptions{ShowVal: true, Position: DataLabelPosTop})
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := readZipFile(t, raw, "word/charts/chart1.xml")
+	assertWellFormedXML(t, "combo", xml)
+	barKids := innerChildNames(xml, "c:barChart")
+	assertSeq(t, barKids, "c:barDir", "c:grouping", "c:varyColors", "c:ser", "c:dLbls", "c:axId")
+	lineKids := innerChildNames(xml, "c:lineChart")
+	assertSeq(t, lineKids, "c:grouping", "c:varyColors", "c:ser", "c:dLbls", "c:axId")
+	plot := innerChildNames(xml, "c:plotArea")
+	assertSeq(t, plot, "c:layout", "c:barChart", "c:lineChart", "c:catAx", "c:valAx")
+	assertChartAxIDsAligned(t, xml)
+	barIDs := axIDVals(innerXML(xml, "c:barChart"))
+	lineIDs := axIDVals(innerXML(xml, "c:lineChart"))
+	if len(barIDs) != 2 || barIDs[0] != "1" || barIDs[1] != "2" {
+		t.Fatalf("barChart axId=%v", barIDs)
+	}
+	if len(lineIDs) != 2 || lineIDs[0] != "1" || lineIDs[1] != "3" {
+		t.Fatalf("lineChart axId=%v", lineIDs)
+	}
+	cat := axisBlockByID(xml, "c:catAx", "1")
+	if !strings.Contains(cat, `<c:crossAx val="2"`) {
+		t.Fatalf("catAx must cross primary valAx 2: %s", cat)
+	}
+	if strings.Contains(cat, "<c:crossesAt") {
+		t.Fatal("catAx must not emit c:crossesAt")
+	}
+	prim := axisBlockByID(xml, "c:valAx", "2")
+	if !strings.Contains(prim, `<c:axPos val="l"`) || !strings.Contains(prim, `<c:crossAx val="1"`) {
+		t.Fatalf("primary valAx: %s", prim)
+	}
+	sec := axisBlockByID(xml, "c:valAx", "3")
+	if sec == "" {
+		t.Fatal("missing secondary valAx 3")
+	}
+	if !strings.Contains(sec, `<c:axPos val="r"`) {
+		t.Fatalf("secondary axPos r: %s", sec)
+	}
+	if !strings.Contains(sec, `<c:crossAx val="1"`) {
+		t.Fatalf("secondary crossAx must point at catAx 1: %s", sec)
+	}
+	if !strings.Contains(sec, `<c:crosses val="max"`) {
+		t.Fatalf("secondary crosses max: %s", sec)
+	}
+	if strings.Contains(sec, "<c:crossesAt") {
+		t.Fatal("secondary valAx must not emit c:crossesAt")
+	}
+	bar := innerXML(xml, "c:barChart")
+	if strings.Contains(bar, `<c:dLblPos val="t"`) {
+		t.Fatal("barChart dLblPos t is not Word-safe")
+	}
+	if !strings.Contains(bar, `<c:dLblPos val="outEnd"`) {
+		t.Fatal("barChart dLblPos should map t to outEnd")
+	}
+}
+
+func TestOpenXMLNoDefaultDLbls(t *testing.T) {
+	doc := New()
+	doc.AddChart(ChartTypeBar, []string{"A"}, []float64{1})
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := readZipFile(t, raw, "word/charts/chart1.xml")
+	if strings.Contains(xml, "<c:dLbls") {
+		t.Fatal("default chart must not emit c:dLbls")
+	}
+}
+
+func TestOpenXMLAreaChartOmitsDLblsWithoutSet(t *testing.T) {
+	doc := New()
+	doc.AddChart(ChartTypeArea, []string{"Q1"}, []float64{1})
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := readZipFile(t, raw, "word/charts/chart1.xml")
+	assertSeq(t, innerChildNames(xml, "c:areaChart"), "c:grouping", "c:ser", "c:axId")
+	if strings.Contains(innerXML(xml, "c:areaChart"), "<c:dLbls") {
+		t.Fatal("areaChart must not emit c:dLbls unless SetDataLabels")
+	}
+}
+
+func TestOpenXMLAxisChildOrder(t *testing.T) {
+	doc := New()
+	ch := doc.AddChart(ChartTypeArea, []string{"Q1"}, []float64{1})
+	ch.SetMajorGridlines(true)
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := readZipFile(t, raw, "word/charts/chart1.xml")
+	for _, tag := range []string{"c:catAx", "c:valAx"} {
+		kids := innerChildNames(xml, tag)
+		assertSeq(t, kids, "c:axId", "c:scaling", "c:delete", "c:axPos", "c:majorGridlines", "c:numFmt", "c:majorTickMark", "c:minorTickMark", "c:tickLblPos", "c:spPr", "c:txPr", "c:crossAx", "c:crosses")
+	}
+	if strings.Contains(xml, "<c:crossesAt") {
+		t.Fatal("axes must not emit c:crossesAt")
+	}
+}
+
+func TestTemplateFilterOutputHasNoNumericEntities(t *testing.T) {
+	tp := mustTemplate(t, func(sec *element.Section) {
+		sec.AddText("When ${created_at | formatDate:\"2006-01-02\"}")
+		sec.AddText("Hello ${name | upper}")
+		sec.AddText("Amt ${amount | formatCurrency:¥}")
+	})
+	tp.SetValue("created_at", "2026-09-26T08:00:00Z")
+	tp.SetValue("name", "alice")
+	tp.SetValue("amount", "1999.5")
+	raw, err := tp.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	docxml := readZipFile(t, raw, "word/document.xml")
+	if i := strings.Index(docxml, "&#"); i >= 0 {
+		end := i + 24
+		if end > len(docxml) {
+			end = len(docxml)
+		}
+		t.Fatalf("numeric character reference in template output: %s", docxml[i:end])
+	}
+	for _, want := range []string{"When 2026-09-26", "ALICE", "¥1999.50"} {
+		if !strings.Contains(docxml, want) {
+			t.Fatalf("missing %q in %s", want, docxml)
+		}
+	}
+}
+
+var axIDValRe = regexp.MustCompile(`<c:axId val="([^"]+)"`)
+
+func innerXML(block, parent string) string {
+	open := "<" + parent
+	i := strings.Index(block, open)
+	if i < 0 {
+		return ""
+	}
+	gt := strings.Index(block[i:], ">")
+	if gt < 0 {
+		return ""
+	}
+	start := i + gt + 1
+	close := "</" + parent + ">"
+	end := strings.Index(block[start:], close)
+	if end < 0 {
+		return ""
+	}
+	return block[start : start+end]
+}
+
+func axIDVals(block string) []string {
+	var out []string
+	for _, m := range axIDValRe.FindAllStringSubmatch(block, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
+
+func axisBlockByID(chartXML, tag, id string) string {
+	rest := chartXML
+	open := "<" + tag
+	close := "</" + tag + ">"
+	for {
+		i := strings.Index(rest, open)
+		if i < 0 {
+			return ""
+		}
+		end := strings.Index(rest[i:], close)
+		if end < 0 {
+			return ""
+		}
+		block := rest[i : i+end+len(close)]
+		if strings.Contains(block, `<c:axId val="`+id+`"`) {
+			return block
+		}
+		rest = rest[i+end+len(close):]
+	}
+}
+
+func assertChartAxIDsAligned(t *testing.T, chartXML string) {
+	t.Helper()
+	declared := map[string]struct{}{}
+	for _, tag := range []string{"c:catAx", "c:valAx"} {
+		rest := chartXML
+		for {
+			block := innerXML(rest, tag)
+			if block == "" {
+				break
+			}
+			ids := axIDVals(block)
+			if len(ids) == 0 {
+				t.Fatalf("%s missing c:axId", tag)
+			}
+			declared[ids[0]] = struct{}{}
+			close := "</" + tag + ">"
+			i := strings.Index(rest, close)
+			if i < 0 {
+				break
+			}
+			rest = rest[i+len(close):]
+		}
+	}
+	for _, tag := range []string{"c:barChart", "c:lineChart", "c:areaChart", "c:pieChart"} {
+		block := innerXML(chartXML, tag)
+		if block == "" {
+			continue
+		}
+		for _, id := range axIDVals(block) {
+			if _, ok := declared[id]; !ok {
+				t.Fatalf("%s references axId %s with no matching axis", tag, id)
+			}
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no axes declared")
 	}
 }
 

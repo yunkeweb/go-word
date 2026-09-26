@@ -16,18 +16,7 @@ func TestMainRuns(t *testing.T) {
 	}
 	defer os.Chdir(old)
 	main()
-	files := []string{
-		"diag_a_paragraphs_tables.docx",
-		"diag_b_streamwriter.docx",
-		"diag_c_charts.docx",
-		"diag_d_markdown_html.docx",
-		"diag_e_template.docx",
-		"diag_f_comments_revisions.docx",
-		"diag_combo.docx",
-		"diag_area.docx",
-		"diag_template.docx",
-	}
-	for _, name := range files {
+	for _, name := range []string{"v070_demo.docx", "template_v2.docx"} {
 		if _, err := os.Stat(name); err != nil {
 			t.Fatal(err)
 		}

@@ -76,6 +76,7 @@ type DataLabelOptions struct {
 	ShowPercent     bool
 	ShowLeaderLines bool
 	ShowBubbleSize  bool
+	Position        string
 }
 
 // DefaultDataLabelOptions matches PHPWord Chart constructor defaults.
@@ -102,6 +103,10 @@ type Chart struct {
 	MajorTickPosition     string
 	DataLabels            DataLabelOptions
 	DataLabelsSet         bool
+	LineSmooth            bool
+	LineMarker            string
+	ValueNumFmt           string
+	SecondaryValueNumFmt  string
 }
 
 // TOC is a table-of-contents tab style (PHPWord Style\TOC).
@@ -118,22 +123,22 @@ func NewTOC() TOC {
 
 // Frame is shared positioning for images, text boxes and shapes (PHPWord Style\Frame).
 type Frame struct {
-	Alignment         string
-	Unit              string
-	Width             int
-	Height            int
-	Left              int
-	Top               int
-	Pos               string
-	HPos              string
-	VPos              string
-	HPosRelTo         string
-	VPosRelTo         string
-	Wrap              string
-	WrapDistanceTop   int
+	Alignment          string
+	Unit               string
+	Width              int
+	Height             int
+	Left               int
+	Top                int
+	Pos                string
+	HPos               string
+	VPos               string
+	HPosRelTo          string
+	VPosRelTo          string
+	Wrap               string
+	WrapDistanceTop    int
 	WrapDistanceBottom int
-	WrapDistanceLeft  int
-	WrapDistanceRight int
+	WrapDistanceLeft   int
+	WrapDistanceRight  int
 }
 
 // Language is a theme font language.

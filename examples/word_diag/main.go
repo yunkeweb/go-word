@@ -23,6 +23,9 @@ func main() {
 		{"diag_d_markdown_html.docx", genMarkdownHTML},
 		{"diag_e_template.docx", genTemplate},
 		{"diag_f_comments_revisions.docx", genCommentsRevisions},
+		{"diag_combo.docx", genComboChart},
+		{"diag_area.docx", genAreaChart},
+		{"diag_template.docx", genTemplateFilters},
 	}
 	for _, g := range gens {
 		if err := g.fn(g.name); err != nil {
@@ -92,7 +95,7 @@ func genStreamWriter(path string) error {
 	}
 	line := style.Border{Style: "single", Size: 4, Color: "8FAADC"}
 	tbl := element.NewTable(style.Table{
-		Width: 9000,
+		Width:   9000,
 		Borders: style.Borders{Top: line, Left: line, Right: line, Bottom: line, InsideH: line, InsideV: line},
 	})
 	hr := tbl.AddRow(280)
@@ -186,6 +189,76 @@ func genTemplate(path string) error {
 	if err := tp.SetCondition("hide", false); err != nil {
 		return err
 	}
+	return tp.Save(path)
+}
+
+func genComboChart(path string) error {
+	doc := word.New()
+	sec := doc.AddSection()
+	sec.AddText("Combo chart diagnostic")
+	cats := []string{"Jan", "Feb", "Mar", "Apr"}
+	ch := doc.AddChart(word.ChartTypeCombo, cats, []float64{120, 150, 140, 180})
+	ch.Series[0].Name = "Sales"
+	ch.Series[0].Kind = word.ChartTypeColumn
+	ch.AddComboSeries(word.ChartTypeLine, cats, []float64{8.2, 9.1, 8.7, 10.4}, "Margin %", true)
+	ch.Style.Title = "Sales vs Margin"
+	ch.Style.Width = 5486400
+	ch.Style.Height = 3200400
+	ch.Style.ValueNumFmt = "0"
+	ch.Style.SecondaryValueNumFmt = "0.0"
+	ch.SetLegendPosition(word.LegendRight)
+	ch.SetMajorGridlines(true)
+	ch.SetLineSmooth(true)
+	ch.SetLineMarker("circle")
+	ch.SetDataLabels(word.ChartDataLabelOptions{ShowVal: true, Position: word.DataLabelPosTop})
+	return doc.Save(path)
+}
+
+func genAreaChart(path string) error {
+	doc := word.New()
+	sec := doc.AddSection()
+	sec.AddText("Area chart diagnostic")
+	ch := doc.AddChart(word.ChartTypeStackedArea, []string{"Q1", "Q2", "Q3", "Q4"}, []float64{12, 18, 15, 22}, []float64{8, 11, 13, 16})
+	ch.Series[0].Name = "Hardware"
+	ch.Series[1].Name = "Software"
+	ch.Style.Title = "Quarterly Revenue Mix"
+	ch.Style.Width = 5486400
+	ch.Style.Height = 3200400
+	ch.SetLegendPosition(word.LegendBottom)
+	ch.SetMajorGridlines(true)
+	ch.SetDataLabels(word.ChartDataLabelOptions{
+		ShowVal:  true,
+		Position: word.DataLabelPosCenter,
+	})
+	return doc.Save(path)
+}
+
+func genTemplateFilters(path string) error {
+	src := word.New()
+	sec := src.AddSection()
+	sec.AddText("When ${created_at | formatDate:\"2006-01-02\"}")
+	sec.AddText("Hello ${name | upper}")
+	sec.AddText("City ${city | lower}")
+	sec.AddText("Title ${title | trim | upper}")
+	sec.AddText("Blurb ${blurb | truncate:12}")
+	sec.AddText("Amount ${amount | formatCurrency:¥}")
+	sec.AddText("Empty ${missing | default:N/A}")
+	sec.AddText("${if age >= 18}Adult content is visible.${endif}")
+	raw, err := src.Bytes()
+	if err != nil {
+		return err
+	}
+	tp, err := word.NewTemplateProcessorBytes(raw)
+	if err != nil {
+		return err
+	}
+	tp.SetValue("created_at", "2026-09-26T08:00:00Z")
+	tp.SetValue("name", "alice")
+	tp.SetValue("city", "Shanghai")
+	tp.SetValue("title", "  go-word  ")
+	tp.SetValue("blurb", "Streaming parser, charts and filters")
+	tp.SetValue("amount", "1999.5")
+	tp.SetValue("age", "21")
 	return tp.Save(path)
 }
 

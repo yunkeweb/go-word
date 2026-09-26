@@ -93,12 +93,41 @@ func (w *XMLWriter) Element(name, text string, attrs ...string) {
 	w.End()
 }
 
-// Text writes character data. encoding/xml escapes the five XML entities.
+// EscapeXMLText escapes the five XML 1.0 special characters with named
+// entities (&amp; &lt; &gt; &quot; &apos;). It never emits numeric
+// character references such as &#34; or &#80;.
+func EscapeXMLText(s string) string {
+	if !strings.ContainsAny(s, `&<>"'`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '&':
+			b.WriteString("&amp;")
+		case '<':
+			b.WriteString("&lt;")
+		case '>':
+			b.WriteString("&gt;")
+		case '"':
+			b.WriteString("&quot;")
+		case '\'':
+			b.WriteString("&apos;")
+		default:
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// Text writes character data using named XML entities only.
 func (w *XMLWriter) Text(s string) {
 	if s == "" {
 		return
 	}
-	_ = w.enc.EncodeToken(xml.CharData(s))
+	_ = w.enc.Flush()
+	_, _ = io.WriteString(w.sink(), EscapeXMLText(s))
 }
 
 // WT writes a w:t run of text, setting xml:space="preserve" when needed.

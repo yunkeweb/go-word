@@ -40,8 +40,9 @@ func (t *TemplateProcessor) SetMacroChars(open, close string) {
 
 // TemplateProcessor fills ${placeholders} in an existing .docx (PHPWord TemplateProcessor).
 type TemplateProcessor struct {
-	files map[string][]byte
-	order []string
+	files  map[string][]byte
+	order  []string
+	values map[string]string
 }
 
 // NewTemplateProcessor opens a .docx template from disk.
@@ -59,7 +60,7 @@ func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error) {
 	if err != nil {
 		return nil, err
 	}
-	tp := &TemplateProcessor{files: map[string][]byte{}}
+	tp := &TemplateProcessor{files: map[string][]byte{}, values: map[string]string{}}
 	for _, f := range zr.File {
 		rc, err := f.Open()
 		if err != nil {
@@ -107,6 +108,11 @@ func (t *TemplateProcessor) SetValue(search, replace string) {
 // SetValueLimit replaces at most limit occurrences (-1 = all).
 func (t *TemplateProcessor) SetValueLimit(search, replace string, limit int) {
 	search = unwrapMacro(search)
+	if t.values == nil {
+		t.values = map[string]string{}
+	}
+	t.values[search] = replace
+	t.applyPipesFor(search)
 	replace = t.ReplaceCarriageReturns(xmlEscape(replace))
 	old := []byte(macro(search))
 	neu := []byte(replace)
@@ -313,16 +319,11 @@ func unwrapMacro(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, macroOpen)
 	s = strings.TrimSuffix(s, macroClose)
-	return s
+	return decodeMacroXML(s)
 }
 
 func xmlEscape(s string) string {
-	s = common.ControlCharEncode(s)
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, `"`, "&quot;")
-	return s
+	return common.EscapeXMLText(common.ControlCharEncode(s))
 }
 
 // Save writes the filled template to filename.
@@ -336,6 +337,7 @@ func (t *TemplateProcessor) Save(filename string) error {
 
 // Bytes returns the filled template as a .docx package.
 func (t *TemplateProcessor) Bytes() ([]byte, error) {
+	t.applyRemainingPipes()
 	t.applyRemainingIfBlocks()
 	buf := common.GetBuffer()
 	defer common.PutBuffer(buf)

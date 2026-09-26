@@ -222,9 +222,13 @@ func (t *TOC) Type() string { return "TOC" }
 
 // ChartSeries is one data series on a chart.
 type ChartSeries struct {
-	Categories []string
-	Values     []float64
-	Name       string
+	Categories    []string
+	Values        []float64
+	Name          string
+	Kind          string
+	SecondaryAxis bool
+	Smooth        bool
+	Marker        string
 }
 
 // Chart is a chart drawing.
@@ -252,6 +256,54 @@ func (c *Chart) AddSeries(categories []string, values []float64, name ...string)
 		c.Values = values
 		c.SeriesName = s.Name
 	}
+}
+
+// AddComboSeries appends a series with an explicit chart kind and axis.
+func (c *Chart) AddComboSeries(kind string, categories []string, values []float64, name string, secondary bool) {
+	s := ChartSeries{
+		Categories:    categories,
+		Values:        values,
+		Name:          name,
+		Kind:          kind,
+		SecondaryAxis: secondary,
+	}
+	c.Series = append(c.Series, s)
+	if len(c.Categories) == 0 {
+		c.Categories = categories
+		c.Values = values
+		c.SeriesName = name
+		if c.ChartType == "" {
+			c.ChartType = kind
+		}
+	}
+}
+
+// SetDataLabels configures c:dLbls visibility and dLblPos.
+func (c *Chart) SetDataLabels(opts style.DataLabelOptions) {
+	c.Style.DataLabels = opts
+	c.Style.DataLabelsSet = true
+}
+
+// SetMajorGridlines toggles major gridlines on both axes.
+func (c *Chart) SetMajorGridlines(visible bool) {
+	c.Style.ShowGridX = visible
+	c.Style.ShowGridY = visible
+}
+
+// SetLegendPosition shows the legend at pos (t/b/l/r).
+func (c *Chart) SetLegendPosition(pos string) {
+	c.Style.ShowLegend = true
+	c.Style.LegendPosition = pos
+}
+
+// SetLineSmooth enables c:smooth on line series.
+func (c *Chart) SetLineSmooth(on bool) {
+	c.Style.LineSmooth = on
+}
+
+// SetLineMarker sets the c:marker symbol for line series (circle, diamond, none, …).
+func (c *Chart) SetLineMarker(symbol string) {
+	c.Style.LineMarker = symbol
 }
 
 // Ruby is phonetic guide text.

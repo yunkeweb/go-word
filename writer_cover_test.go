@@ -265,7 +265,7 @@ func TestWriterAllElementsAndSettings(t *testing.T) {
 	sec.AddRuby(rbBase, rbRuby, element.RubyProperties{Alignment: element.RubyAlignLeft})
 	sec.AddRuby(nil, nil, element.RubyProperties{})
 
-	for _, kind := range []string{"pie", "doughnut", "bar", "stacked_bar", "percent_stacked_bar", "column", "line", "area", "radar", "scatter", "unknown"} {
+	for _, kind := range []string{"pie", "doughnut", "bar", "stacked_bar", "percent_stacked_bar", "column", "line", "area", "stacked_area", "percent_stacked_area", "radar", "scatter", "unknown"} {
 		ch := sec.AddChart(kind, []string{"A", "B"}, []float64{1, 2}, style.Chart{
 			Title: "T", ShowLegend: true, ThreeD: true, ShowAxisLabels: true,
 			ShowGridX: true, ShowGridY: true, CategoryAxisTitle: "X", ValueAxisTitle: "Y",
