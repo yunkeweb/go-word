@@ -37,6 +37,7 @@ type word2007Writer struct {
 	oleIndex     int
 	revIndex     int
 	shapeIndex   int
+	sdtIndex     int
 }
 
 type pkgChart struct {

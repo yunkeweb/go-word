@@ -312,13 +312,6 @@ func (c *Container) AddEndnote(styles ...any) *Endnote {
 	return en
 }
 
-// AddSDT appends a structured document tag.
-func (c *Container) AddSDT(typ string) *SDT {
-	s := &SDT{SDTType: typ}
-	c.add(s)
-	return s
-}
-
 // AddTOC appends a table of contents field.
 func (c *Container) AddTOC(font any, tocStyle any, minDepth, maxDepth int) *TOC {
 	toc := &TOC{FontStyle: font, TOCStyle: tocStyle, MinDepth: minDepth, MaxDepth: maxDepth}

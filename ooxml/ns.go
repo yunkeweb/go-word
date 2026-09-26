@@ -32,6 +32,7 @@ const (
 	NSC       = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 	NSPic     = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 	NSWPS     = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+	NSW14     = "http://schemas.microsoft.com/office/word/2010/wordml"
 	NSM       = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 	NSV       = "urn:schemas-microsoft-com:vml"
 	NSO       = "urn:schemas-microsoft-com:office:office"

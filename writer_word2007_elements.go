@@ -93,7 +93,7 @@ func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, 
 			xw.End()
 		}
 	case *element.SDT:
-		w.writeSDT(xw, v)
+		w.writeSDT(xw, v, inline)
 	case *element.TextBox:
 		w.writeTextBox(xw, v)
 	case *element.Line:
@@ -1010,8 +1010,34 @@ func watermarkPointSize(img *element.Image) (float64, float64) {
 	return wpt, hpt
 }
 
-func (w *word2007Writer) writeSDT(xw *common.XMLWriter, s *element.SDT) {
+func (w *word2007Writer) writeSDT(xw *common.XMLWriter, s *element.SDT, inline bool) {
+	hasKids := len(s.Elements()) > 0
+	wrapP := !inline && !hasKids
+	if wrapP {
+		xw.Start("w:p")
+	}
 	xw.Start("w:sdt")
+	w.writeSDTPr(xw, s)
+	xw.Start("w:sdtContent")
+	if hasKids {
+		w.writeContainer(xw, s.Elements(), inline)
+	} else {
+		w.writeSDTContentRun(xw, s)
+	}
+	xw.End() // w:sdtContent
+	xw.End() // w:sdt
+	if wrapP {
+		xw.End() // w:p
+	}
+}
+
+func (w *word2007Writer) nextSDTID() int {
+	w.sdtIndex++
+	return 100000000 + w.sdtIndex
+}
+
+func (w *word2007Writer) writeSDTPr(xw *common.XMLWriter, s *element.SDT) {
+	// CT_SdtPr: alias, tag, id, lock?, placeholder?, showingPlcHdr?, then the control choice.
 	xw.Start("w:sdtPr")
 	if s.Alias != "" {
 		xw.Empty("w:alias", "w:val", s.Alias)
@@ -1019,20 +1045,115 @@ func (w *word2007Writer) writeSDT(xw *common.XMLWriter, s *element.SDT) {
 	if s.Tag != "" {
 		xw.Empty("w:tag", "w:val", s.Tag)
 	}
-	xw.Empty("w:id", "w:val", "1")
+	id := s.ID
+	if id == 0 {
+		id = w.nextSDTID()
+	}
+	xw.Empty("w:id", "w:val", itoa(id))
+	if s.Lock != "" {
+		xw.Empty("w:lock", "w:val", s.Lock)
+	}
+	if s.Placeholder != "" {
+		xw.Start("w:placeholder")
+		xw.Empty("w:docPart", "w:val", "DefaultPlaceholder")
+		xw.End()
+	}
+	if s.ShowingPlcHdr {
+		xw.Empty("w:showingPlcHdr")
+	}
+	w.writeSDTControl(xw, s)
 	xw.End()
-	xw.Start("w:sdtContent")
-	if len(s.Elements()) == 0 {
-		xw.Start("w:p")
-		xw.Start("w:r")
-		xw.WT(s.Value)
-		xw.End()
-		xw.End()
-	} else {
-		w.writeContainer(xw, s.Elements(), false)
+}
+
+func (w *word2007Writer) writeSDTControl(xw *common.XMLWriter, s *element.SDT) {
+	switch element.NormalizeSDTType(s.SDTType) {
+	case element.SDTTypePlainText:
+		if s.MultiLine {
+			xw.Empty("w:text", "w:multiLine", "1")
+		} else {
+			xw.Empty("w:text")
+		}
+	case element.SDTTypeComboBox:
+		w.writeSDTList(xw, "w:comboBox", s.ListItems)
+	case element.SDTTypeDropDown:
+		w.writeSDTList(xw, "w:dropDownList", s.ListItems)
+	case element.SDTTypeDate:
+		w.writeSDTDate(xw, s)
+	case element.SDTTypeCheckbox:
+		w.writeSDTCheckbox(xw, s.Checked)
+	case element.SDTTypeRichText:
+		xw.Empty("w:richText")
+	}
+}
+
+func (w *word2007Writer) writeSDTList(xw *common.XMLWriter, tag string, items []element.SDTListItem) {
+	xw.Start(tag)
+	for _, it := range items {
+		display := it.DisplayText
+		if display == "" {
+			display = it.Value
+		}
+		xw.Empty("w:listItem", "w:displayText", display, "w:value", it.Value)
 	}
 	xw.End()
+}
+
+func (w *word2007Writer) writeSDTDate(xw *common.XMLWriter, s *element.SDT) {
+	format := s.DateFormat
+	if format == "" {
+		format = "yyyy-MM-dd"
+	}
+	lid := s.Locale
+	if lid == "" {
+		lid = "en-US"
+	}
+	attrs := []string{}
+	if full := sdtFullDate(s.Value); full != "" {
+		attrs = append(attrs, "w:fullDate", full)
+	}
+	xw.Start("w:date", attrs...)
+	xw.Empty("w:dateFormat", "w:val", format)
+	xw.Empty("w:lid", "w:val", lid)
+	xw.Empty("w:storeMappedDataAs", "w:val", "dateTime")
+	xw.Empty("w:calendar", "w:val", "gregorian")
 	xw.End()
+}
+
+func (w *word2007Writer) writeSDTCheckbox(xw *common.XMLWriter, checked bool) {
+	val := "0"
+	if checked {
+		val = "1"
+	}
+	font := element.CheckboxFont()
+	xw.Start("w14:checkbox")
+	xw.Empty("w14:checked", "w14:val", val)
+	xw.Empty("w14:checkedState", "w14:val", "2612", "w14:font", font)
+	xw.Empty("w14:uncheckedState", "w14:val", "2610", "w14:font", font)
+	xw.End()
+}
+
+func (w *word2007Writer) writeSDTContentRun(xw *common.XMLWriter, s *element.SDT) {
+	xw.Start("w:r")
+	if element.NormalizeSDTType(s.SDTType) == element.SDTTypeCheckbox {
+		font := element.CheckboxFont()
+		xw.Start("w:rPr")
+		xw.Empty("w:rFonts", "w:ascii", font, "w:hAnsi", font, "w:eastAsia", font, "w:cs", font, "w:hint", "eastAsia")
+		xw.End()
+	}
+	xw.WT(s.Value)
+	xw.End()
+}
+
+func sdtFullDate(value string) string {
+	if len(value) == 10 && value[4] == '-' && value[7] == '-' {
+		for _, c := range value {
+			if c != '-' && (c < '0' || c > '9') {
+				return ""
+			}
+		}
+		return value + "T00:00:00Z"
+	}
+	return ""
 }
 
 func (w *word2007Writer) writeTextBox(xw *common.XMLWriter, tb *element.TextBox) {

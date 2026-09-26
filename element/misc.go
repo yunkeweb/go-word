@@ -211,18 +211,6 @@ func NewEndnote(para any) *Endnote {
 	return en
 }
 
-// SDT is a structured document tag.
-type SDT struct {
-	Container
-	SDTType   string
-	Alias     string
-	Tag       string
-	Value     string
-	ListItems []string
-}
-
-func (s *SDT) Type() string { return "SDT" }
-
 // TOC is a table of contents field.
 type TOC struct {
 	Base

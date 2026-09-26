@@ -82,7 +82,8 @@ func CloneElement(el Element) Element {
 	case *SDT:
 		c := *v
 		c.Container = cloneContainer(v.Container)
-		c.ListItems = append([]string(nil), v.ListItems...)
+		c.ListItems = append([]SDTListItem(nil), v.ListItems...)
+		c.ID = 0
 		return &c
 	case *Image:
 		return cloneImage(v)

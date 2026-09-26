@@ -161,7 +161,8 @@ func (w *word2007Writer) writeDocumentStart(xw *common.XMLWriter) {
 		"xmlns:c", ooxml.NSC,
 		"xmlns:pic", ooxml.NSPic,
 		"xmlns:wps", ooxml.NSWPS,
-		"mc:Ignorable", "wps",
+		"xmlns:w14", ooxml.NSW14,
+		"mc:Ignorable", "w14 wps",
 	)
 	xw.Start("w:body")
 }
@@ -281,6 +282,9 @@ func (w *word2007Writer) writeHdrFtr(xw *common.XMLWriter, tag string, el elemen
 		"xmlns:v", ooxml.NSV,
 		"xmlns:o", ooxml.NSO,
 		"xmlns:w10", ooxml.NSW10,
+		"xmlns:w14", ooxml.NSW14,
+		"xmlns:mc", "http://schemas.openxmlformats.org/markup-compatibility/2006",
+		"mc:Ignorable", "w14",
 	)
 	var kids []element.Element
 	switch v := el.(type) {
