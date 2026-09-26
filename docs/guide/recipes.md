@@ -1,6 +1,6 @@
 # Enterprise Recipes
 
-Four complete programs that teams copy into a `main.go` and run with `go run .`. Each writes a `.docx` Microsoft Word 2007 through Microsoft 365 opens without a repair dialog.
+Four complete programs that teams copy into a `main.go` and run with `go run .`. Each writes a `.docx` Microsoft Word 2007 through Microsoft 365 opens without a repair dialog. A fifth track regenerates the 80-document full-feature matrix used to certify v0.9.0.
 
 | Recipe | APIs in play | Output |
 | --- | --- | --- |
@@ -8,8 +8,9 @@ Four complete programs that teams copy into a `main.go` and run with `go run .`.
 | [2. Academic and engineering paper](#2-academic-and-engineering-paper) | `AddMath` OMML, `SetColumns`, `AddTOC` | `paper.docx` |
 | [3. Lossless multi-document splice](#3-lossless-multi-document-splice) | `AppendDocument` + style / bookmark / `rId` isolation | `dossier.docx` |
 | [4. Onboarding form, tiled watermark, edit exceptions](#4-onboarding-form-watermark-and-exceptions) | `AddSDT*`, `SetHeaderRow`, `SetTextWatermark`, `Protect`, `AllowEdit` | `onboarding.docx` |
+| [5. Full-feature matrix (80 documents)](#5-full-feature-matrix) | All exported modules v0.1.0–v0.9.0, dual-engine validators | `test_output_docs/*.docx` |
 
-Related reference pages: [Template Engine v2](./template), [Tables](./table), [SDT form controls](./sdt), [Watermark & Protection](./protect), [Office Math](./math), [Columns](./columns), [TOC](./toc), [Document Merger](./merger).
+Related reference pages: [Template Engine v2](./template), [Tables](./table), [SDT form controls](./sdt), [Watermark & Protection](./protect), [Office Math](./math), [Columns](./columns), [TOC](./toc), [Document Merger](./merger), [OpenXML Compatibility](./compatibility).
 
 ---
 
@@ -407,3 +408,23 @@ func main() {
 - A 3×3 grey **CONFIDENTIAL** grid in every header. Restrict Editing lists password `goword`. Without it, only the Party A paragraph and the green contract-number cell accept input (`w:permStart` / `w:permEnd`). See [Watermark & Protection](./protect).
 
 Longer samples: [`examples/v0.9.0_sdt`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_sdt), [`examples/v0.9.0_table_advanced`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_table_advanced), [`examples/v0.9.0_watermark_security`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_watermark_security).
+
+---
+
+## 5. Full-feature matrix {#5-full-feature-matrix}
+
+Regenerate the 80 randomly combined documents that cover every exported module from v0.1.0 through v0.9.0, then reverse-parse them in Go and open them in Microsoft Word. Output stays in `./test_output_docs` (gitignored). Scripts live in [`tests/matrix`](https://github.com/yunkeweb/go-word/tree/main/tests/matrix).
+
+```sh
+go run ./tests/matrix
+go run tests/matrix/validate_reader.go
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
+```
+
+| Engine | Check | v0.9.0 |
+| --- | --- | --- |
+| `word.Open` / `word.Read` | DOM restore, no panic, `error == nil` | 80 PASS |
+| `word.StreamExtractText` / `word.StreamExtractImages` | Streaming extract | 80 PASS |
+| Word COM `DisplayAlerts=0` + `OpenNoRepairDialog` | Repair dialogs / parse exceptions | 80 PASS |
+
+There is no `word.ReadDOM`. Details and schema notes: [OpenXML Compatibility](./compatibility).

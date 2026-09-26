@@ -79,8 +79,26 @@ func main() {
 }
 ```
 
-`ExtractText` 遍历重建后的 DOM。文件太大不宜整树加载时，使用 [StreamExtractText](./streaming)。
+`ExtractText` 遍历重建后的 DOM。文件太大不宜整树加载时，使用 [StreamExtractText](./streaming)。库中没有 `word.ReadDOM`；DOM 加载入口是 `word.Open`、`word.Read` 与 `word.Load`。
+
+## 全要素矩阵（v0.9.0）
+
+[`tests/matrix`](https://github.com/yunkeweb/go-word/tree/main/tests/matrix) 会写出 80 份随机组合文档，覆盖 v0.1.0 至 v0.9.0 的全部导出模块：排版、多节、页眉页脚、表格、图片/形状、TOC/书签/批注、OMML、图表、SDT、水印/保护。产物落在 `./test_output_docs`（已 gitignore）。
+
+```sh
+go run ./tests/matrix
+go run tests/matrix/validate_reader.go
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
+```
+
+| 引擎 | 检查内容 | v0.9.0 结果 |
+| --- | --- | --- |
+| `word.Open` / `word.Read` + `ExtractText` / `ExtractImages` | DOM 逆向解析，无 panic，`error == nil` | 80 PASS |
+| `word.StreamExtractText` / `word.StreamExtractImages` | 流式提取，无 panic，`error == nil` | 80 PASS |
+| Microsoft Word COM（`DisplayAlerts=0`、`OpenNoRepairDialog`） | OpenXML 修复弹窗、节点顺序、解析异常 | 80 PASS |
+
+`validate_docs.ps1` 启动无头 `Word.Application`，只读打开每份文件。Word 本会弹出的修复对话框会变成异常。
 
 ## 相关
 
-Word 提示“文件损坏”时，从 [FAQ](./faq) 开始。图表 XSD 顺序见 [图表](./charts)。
+Word 提示“文件损坏”时，从 [FAQ](./faq) 开始。图表 XSD 顺序见 [图表](./charts)。[企业级实战案例](./recipes) 第 4 则组合了 SDT、跨页表头、平铺水印与 `AllowEdit`。

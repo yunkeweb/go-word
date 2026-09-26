@@ -17,6 +17,7 @@ Related: [OpenXML Compatibility](./compatibility), [Document Merger](./merger), 
 | Repair dialog, content controls | `w:sdtContent` missing or out of order | Use `AddSDTText` / `AddSDTDropdown` / `AddSDTDate` / `AddSDTCheckbox`. See [SDT](./sdt). |
 | Protection ignores a fill-in field | `AllowEdit` omitted on that paragraph or cell | Call `AllowEdit("Everyone")` after `Protect`. See [Protection](./protect). |
 | Template output has `&#80;` / broken entities | Raw `&` in replaced `w:t` | Use `SetValue`. The processor XML-escapes replacements. |
+| Need a full-feature smoke test | Combine every public module | `go run ./tests/matrix`, then the Go reader and Word COM validators. See [Compatibility](./compatibility) and [Recipe 5](./recipes#5-full-feature-matrix). |
 
 If Word still repairs a file you built, dump the ZIP parts (example at the bottom) and compare `word/charts/chart1.xml` or `word/document.xml` with [`examples/v0.9.0_sdt`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_sdt), [`examples/v0.8.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo) and [`openxml_strict_test.go`](https://github.com/yunkeweb/go-word/blob/main/openxml_strict_test.go).
 

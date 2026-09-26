@@ -99,6 +99,18 @@ Runnable samples:
 
 API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word). Site: [yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/).
 
+## Full-feature matrix
+
+[`tests/matrix`](tests/matrix) writes 80 randomly combined `.docx` files covering every public API from v0.1.0 through v0.9.0 (typography, multi-section, headers/footers, tables, images/shapes, TOC/bookmarks/comments, OMML, charts, SDT, watermark/protection). Generated files stay in `./test_output_docs` (gitignored).
+
+```sh
+go run ./tests/matrix
+go run tests/matrix/validate_reader.go
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
+```
+
+`validate_reader.go` reverse-parses each file through `word.Open` / `word.Read`, `word.StreamExtractText`, and `word.StreamExtractImages` (there is no `ReadDOM`). `validate_docs.ps1` opens the same files in a headless Microsoft Word COM session (`DisplayAlerts = 0`, `OpenNoRepairDialog`). v0.9.0 scored **80 PASS / 0 FAIL** on both engines.
+
 ## Document merger
 
 ```go

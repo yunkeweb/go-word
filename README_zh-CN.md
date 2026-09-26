@@ -99,6 +99,18 @@ func main() {
 
 包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。站点：[yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/zh/)。
 
+## 全要素矩阵
+
+[`tests/matrix`](tests/matrix) 会写出 80 份随机组合的 `.docx`，覆盖 v0.1.0 至 v0.9.0 的全部公开 API（排版、多节、页眉页脚、表格、图片/形状、TOC/书签/批注、OMML、图表、SDT、水印/保护）。产物落在 `./test_output_docs`（已 gitignore）。
+
+```sh
+go run ./tests/matrix
+go run tests/matrix/validate_reader.go
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
+```
+
+`validate_reader.go` 用 `word.Open` / `word.Read`、`word.StreamExtractText`、`word.StreamExtractImages` 反向解包（库中没有 `ReadDOM`）。`validate_docs.ps1` 以无头 Microsoft Word COM（`DisplayAlerts = 0`、`OpenNoRepairDialog`）打开同一批文件。v0.9.0 在两端均为 **80 PASS / 0 FAIL**。
+
 ## 文档合并
 
 ```go

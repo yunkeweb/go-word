@@ -1,6 +1,6 @@
 # 企业级实战案例
 
-四份完整程序，复制到 `main.go` 后执行 `go run .`。每份都会写出一份 Microsoft Word 2007 至 Microsoft 365 可直接打开、无需修复对话框的 `.docx`。
+四份完整程序，复制到 `main.go` 后执行 `go run .`。每份都会写出一份 Microsoft Word 2007 至 Microsoft 365 可直接打开、无需修复对话框的 `.docx`。第五条用于复现 v0.9.0 认证用的 80 份全要素矩阵。
 
 | 案例 | 用到的 API | 输出 |
 | --- | --- | --- |
@@ -8,8 +8,9 @@
 | [2. 学术与工程论文排版](#2-学术与工程论文排版) | `AddMath` OMML、`SetColumns`、`AddTOC` | `paper.docx` |
 | [3. 跨文档无损拼接](#3-跨文档无损拼接) | `AppendDocument` + 样式 / 书签 / `rId` 隔离 | `dossier.docx` |
 | [4. 入职表单、平铺水印与区域保护](#4-入职表单平铺水印与区域保护) | `AddSDT*`、`SetHeaderRow`、`SetTextWatermark`、`Protect`、`AllowEdit` | `onboarding.docx` |
+| [5. 全要素矩阵（80 份文档）](#5-全要素矩阵) | v0.1.0–v0.9.0 全部导出模块 + 双引擎校验 | `test_output_docs/*.docx` |
 
-相关参考：[模板引擎 v2](./template)、[表格](./table)、[SDT 表单控件](./sdt)、[水印与保护](./protect)、[Office Math](./math)、[分栏](./columns)、[TOC](./toc)、[文档合并](./merger)。
+相关参考：[模板引擎 v2](./template)、[表格](./table)、[SDT 表单控件](./sdt)、[水印与保护](./protect)、[Office Math](./math)、[分栏](./columns)、[TOC](./toc)、[文档合并](./merger)、[OpenXML 兼容性](./compatibility)。
 
 ---
 
@@ -408,3 +409,23 @@ func main() {
 - 每个页眉都有 3×3 灰色 **CONFIDENTIAL** 网格。限制编辑列出密码 `goword`。不输入密码时，只有甲方段落与绿色合同编号单元格可以填写（`w:permStart` / `w:permEnd`）。见 [水印与保护](./protect)。
 
 更长的示例：[`examples/v0.9.0_sdt`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_sdt)、[`examples/v0.9.0_table_advanced`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_table_advanced)、[`examples/v0.9.0_watermark_security`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_watermark_security)。
+
+---
+
+## 5. 全要素矩阵 {#5-全要素矩阵}
+
+重新生成覆盖 v0.1.0 至 v0.9.0 全部导出模块的 80 份随机组合文档，再用 Go 反向解析，并在 Microsoft Word 中打开。产物落在 `./test_output_docs`（已 gitignore）。脚本在 [`tests/matrix`](https://github.com/yunkeweb/go-word/tree/main/tests/matrix)。
+
+```sh
+go run ./tests/matrix
+go run tests/matrix/validate_reader.go
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
+```
+
+| 引擎 | 检查 | v0.9.0 |
+| --- | --- | --- |
+| `word.Open` / `word.Read` | DOM 还原，无 panic，`error == nil` | 80 PASS |
+| `word.StreamExtractText` / `word.StreamExtractImages` | 流式提取 | 80 PASS |
+| Word COM `DisplayAlerts=0` + `OpenNoRepairDialog` | 修复弹窗 / 解析异常 | 80 PASS |
+
+库中没有 `word.ReadDOM`。细节与 schema 说明见 [OpenXML 兼容性](./compatibility)。

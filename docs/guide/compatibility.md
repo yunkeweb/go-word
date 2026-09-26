@@ -79,8 +79,26 @@ func main() {
 }
 ```
 
-`ExtractText` walks the reconstructed DOM. For files too large to load, use [StreamExtractText](./streaming).
+`ExtractText` walks the reconstructed DOM. For files too large to load, use [StreamExtractText](./streaming). There is no `word.ReadDOM`; the DOM loaders are `word.Open`, `word.Read`, and `word.Load`.
+
+## Full-feature matrix (v0.9.0)
+
+[`tests/matrix`](https://github.com/yunkeweb/go-word/tree/main/tests/matrix) writes 80 randomly combined documents covering every exported module from v0.1.0 through v0.9.0: typography, multi-section layout, headers/footers, tables, images/shapes, TOC/bookmarks/comments, OMML, charts, SDT, and watermark/protection. Output stays in `./test_output_docs` (gitignored).
+
+```sh
+go run ./tests/matrix
+go run tests/matrix/validate_reader.go
+powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
+```
+
+| Engine | What it checks | v0.9.0 result |
+| --- | --- | --- |
+| `word.Open` / `word.Read` + `ExtractText` / `ExtractImages` | DOM reverse-parse, no panic, `error == nil` | 80 PASS |
+| `word.StreamExtractText` / `word.StreamExtractImages` | Streaming extract, no panic, `error == nil` | 80 PASS |
+| Microsoft Word COM (`DisplayAlerts=0`, `OpenNoRepairDialog`) | OpenXML repair dialogs, node order, parse exceptions | 80 PASS |
+
+`validate_docs.ps1` starts a headless `Word.Application` and opens each file read-only. A repair that Word would normally dialog becomes an exception.
 
 ## Related
 
-When Word shows “the file is corrupt”, start at [FAQ](./faq). Chart XSD order is documented on [Charts](./charts).
+When Word shows “the file is corrupt”, start at [FAQ](./faq). Chart XSD order is documented on [Charts](./charts). Recipe 4 on [Enterprise Recipes](./recipes) combines SDT, repeating headers, tiled watermarks, and `AllowEdit`.

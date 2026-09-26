@@ -17,6 +17,7 @@
 | 修复对话框，内容控件 | `w:sdtContent` 缺失或顺序错误 | 使用 `AddSDTText` / `AddSDTDropdown` / `AddSDTDate` / `AddSDTCheckbox`。见 [SDT](./sdt)。 |
 | 保护后某字段仍无法填写 | 该段落或单元格未调用 `AllowEdit` | 在 `Protect` 之后调用 `AllowEdit("Everyone")`。见 [保护](./protect)。 |
 | 模板输出出现 `&#80;` / 实体损坏 | 替换进 `w:t` 的裸 `&` | 使用 `SetValue`。处理器会 XML 转义替换值。 |
+| 需要全功能冒烟测试 | 组合全部公开模块 | `go run ./tests/matrix`，再跑 Go Reader 与 Word COM 校验。见 [兼容性](./compatibility) 与 [案例 5](./recipes#5-全要素矩阵)。 |
 
 若 Word 仍修复你生成的文件，列出 ZIP 部件（见文末示例），把 `word/charts/chart1.xml` 或 `word/document.xml` 与 [`examples/v0.9.0_sdt`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_sdt)、[`examples/v0.8.0_demo`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.8.0_demo) 以及 [`openxml_strict_test.go`](https://github.com/yunkeweb/go-word/blob/main/openxml_strict_test.go) 对照。
 
