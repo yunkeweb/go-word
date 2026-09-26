@@ -1,6 +1,8 @@
 # Benchmarks
 
-All numbers come from `go test -bench` on the library’s own `bench_test.go`. They measure **writer / template / stream** cost, not Microsoft Word.
+All numbers come from `go test -bench` on the library’s own `bench_test.go`. They measure **writer / template / stream** cost, not Microsoft Word. Streaming extract is shown with a `runtime.MemStats` occupancy program because extra heap stays O(1) relative to file size — a single `ns/op` would hide that.
+
+Related: [O(1) Streaming Extractor](./streaming), [Enterprise Recipes](./recipes).
 
 ## Environment
 
@@ -13,7 +15,7 @@ All numbers come from `go test -bench` on the library’s own `bench_test.go`. T
 
 Re-run on your hardware before quoting the figures in a capacity plan. Allocations are the stable signal; wall time moves with disk and CPU.
 
-## Results
+## Writer / template results
 
 | Benchmark | Workload | ns/op | B/op | allocs/op |
 | --- | --- | ---: | ---: | ---: |
@@ -23,6 +25,79 @@ Re-run on your hardware before quoting the figures in a capacity plan. Allocatio
 | `BenchmarkStreamWriter` | incremental paragraphs into a ZIP | 1.55e6 | 142 KiB | 627 |
 
 `B/op` is extra heap per iteration, not the size of the `.docx`. Stream writer allocations stay flat as you add paragraphs because `document.xml` is flushed as it is produced.
+
+## Streaming parse and memory occupancy
+
+`StreamExtractText` / `StreamExtractImages` scan the ZIP with `encoding/xml.Decoder`. Each paragraph string is handed to the callback and then dropped. Extra heap does **not** grow with page count the way `Load` / `LoadBytes` does.
+
+| API | Builds DOM | Extra memory vs file size |
+| --- | --- | --- |
+| `Load` / `LoadBytes` | Yes | Whole tree |
+| `StreamExtractText` / `StreamExtractImages` | No | O(1) |
+| `NewStreamWriter` | Writes incrementally | Body XML is not fully buffered |
+
+Prefer `*os.File` so `archive/zip` maps the package without copying it. A plain `io.Reader` is buffered first. Rewind or reopen before a second pass.
+
+### Complete example — occupancy of a stream extract
+
+Save as `main.go` and run `go run .`. The program builds a 200-paragraph document, then walks it twice: once with `StreamExtractText`, once with `LoadBytes`. Heap delta after `runtime.GC()` is the occupancy signal.
+
+```go
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"log"
+	"runtime"
+
+	"github.com/yunkeweb/go-word"
+	"github.com/yunkeweb/go-word/style"
+)
+
+func heap() uint64 {
+	runtime.GC()
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc
+}
+
+func main() {
+	doc := word.New()
+	sec := doc.AddSection()
+	sec.AddTitle("Occupancy", 1)
+	for i := 0; i < 200; i++ {
+		sec.AddText("The quick brown fox jumps over the lazy dog.", style.Font{Size: 11})
+	}
+	raw, err := doc.Bytes()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("docx %d bytes\n", len(raw))
+
+	before := heap()
+	n := 0
+	if err := word.StreamExtractText(bytes.NewReader(raw), func(p string) error {
+		if p != "" {
+			n++
+		}
+		return nil
+	}); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("stream  paragraphs=%d  heapΔ=%d KiB\n", n, int64(heap()-before)/1024)
+
+	before = heap()
+	loaded, err := word.LoadBytes(raw)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = loaded
+	fmt.Printf("dom     heapΔ=%d KiB (tree retained)\n", int64(heap()-before)/1024)
+}
+```
+
+On the same i7-10870H host the stream pass reports a heap delta of a few hundred KiB regardless of stretching the loop from 200 to a few thousand paragraphs. The DOM pass grows with the tree. Treat the printed Δ as a trend on *your* hardware — `HeapAlloc` is not a laboratory instrument.
 
 ## How to reproduce
 

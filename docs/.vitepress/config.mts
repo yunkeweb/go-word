@@ -62,11 +62,18 @@ function enSidebar() {
       ],
     },
     {
-      text: 'Performance & FAQ',
+      text: 'Recipes',
+      collapsed: false,
+      items: [
+        { text: 'Enterprise Recipes', link: '/guide/recipes' },
+      ],
+    },
+    {
+      text: 'Benchmarks & FAQ',
       collapsed: false,
       items: [
         { text: 'Benchmarks', link: '/guide/benchmarks' },
-        { text: 'FAQ & Word Compatibility', link: '/guide/faq' },
+        { text: 'FAQ', link: '/guide/faq' },
       ],
     },
   ]
@@ -122,11 +129,18 @@ function zhSidebar() {
       ],
     },
     {
-      text: '性能与 FAQ',
+      text: '实战案例',
       collapsed: false,
       items: [
-        { text: '内存基准测试', link: '/zh/guide/benchmarks' },
-        { text: '常见报错与 Word 兼容排查', link: '/zh/guide/faq' },
+        { text: '企业级 Recipes', link: '/zh/guide/recipes' },
+      ],
+    },
+    {
+      text: '性能基准与常见问题',
+      collapsed: false,
+      items: [
+        { text: '性能基准', link: '/zh/guide/benchmarks' },
+        { text: '常见问题', link: '/zh/guide/faq' },
       ],
     },
   ]
@@ -208,6 +222,7 @@ export default defineConfig({
               { text: 'Streaming Parser', link: '/guide/streaming' },
               { text: 'Template Engine v2', link: '/guide/template' },
               { text: 'Document Merger', link: '/guide/merger' },
+              { text: 'Recipes', link: '/guide/recipes' },
               { text: 'Benchmarks', link: '/guide/benchmarks' },
               { text: 'FAQ', link: '/guide/faq' },
             ],
@@ -272,8 +287,9 @@ export default defineConfig({
               { text: '流式解析', link: '/zh/guide/streaming' },
               { text: '模板引擎 v2', link: '/zh/guide/template' },
               { text: '文档合并', link: '/zh/guide/merger' },
-              { text: '基准测试', link: '/zh/guide/benchmarks' },
-              { text: 'FAQ', link: '/zh/guide/faq' },
+              { text: '实战案例', link: '/zh/guide/recipes' },
+              { text: '性能基准', link: '/zh/guide/benchmarks' },
+              { text: '常见问题', link: '/zh/guide/faq' },
             ],
           },
           { text: 'API', link: pkgGoDev },

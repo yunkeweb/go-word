@@ -10,8 +10,8 @@ hero:
       text: 快速开始
       link: /zh/guide/getting-started
     - theme: alt
-      text: 安装
-      link: /zh/guide/installation
+      text: 实战案例
+      link: /zh/guide/recipes
     - theme: alt
       text: GitHub
       link: https://github.com/yunkeweb/go-word
@@ -38,6 +38,34 @@ features:
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
   <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.8.0"><img src="https://img.shields.io/badge/release-v0.8.0-green.svg" alt="v0.8.0" /></a>
 </p>
+
+## 核心优势
+
+生产环境的 Word 流水线通常卡在四件事：把二进制送进隔离网络、在数百页提取时把内存压平、写出 Word 能双击编辑的公式、以及在不引入第二套模板栈的前提下填充合同。
+
+| 约束 | GoWord | 典型 PHP / Python 栈 | 其他 Go `.docx` 写出器 |
+| --- | --- | --- | --- |
+| 语言与依赖 | Go 1.21+ **仅标准库** | 运行时 + XML / ZIP 附加库 | 多为标准库，但表面是只写 |
+| 提取内存 | `StreamExtractText` **O(1)** 额外堆 | 整包 / DOM 载入 | 整棵文档树 |
+| 公式 | LaTeX → 原生 **OMML**（`m:oMathPara`） | 图片、OLE 或省略 | 省略 |
+| 模板 | `${var \| pipe}` + `${block}` / `${if}` | PHPWord 宏或 Jinja→docx | 省略或字符串替换 |
+| 合并隔离 | `AppendDocument` 重映射样式、书签、`rId` | ZIP 拷贝，`image1.png` 互相覆盖 | 省略 |
+| 协议 | LGPL v3 | 混杂 | AGPL 或 MIT 只写 |
+
+GoWord 把 PHPWord 的名字（`AddSection`、`AddText`、`IOFactory`、`TemplateProcessor`）落到纯 Go 的 OpenXML 写出器上。把这些优势拼在一起的三份可复制程序见 [企业级实战案例](/zh/guide/recipes)。
+
+## 性能基准
+
+数字来自 Intel Core i7-10870H、Windows amd64 上的 `go test -benchmem`。分配次数是较稳的信号；墙钟时间随磁盘与 CPU 波动。完整表格、硬件说明与流式提取占用示例见 [性能基准](/zh/guide/benchmarks)。
+
+| 工作负载 | ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| `BenchmarkSaveDocx` — 30 段 + 20×5 表 | 1.88e6 | 163 KiB | 949 |
+| `BenchmarkTableRender` — 50×8 表 | 2.76e6 | 180 KiB | 1820 |
+| `BenchmarkTemplateProcess` — 两处 `${}` 替换 | 1.43e6 | 238 KiB | 703 |
+| `BenchmarkStreamWriter` — 增量 ZIP | 1.55e6 | 142 KiB | 627 |
+
+`B/op` 是每次迭代的额外堆，不是 `.docx` 体积。流式提取在回调后丢弃段落缓冲，额外内存相对文件大小保持 O(1)。
 
 ## 特性对比
 
@@ -94,4 +122,4 @@ func main() {
 go get github.com/yunkeweb/go-word@v0.8.0
 ```
 
-接着阅读 [安装](/zh/guide/installation) 与 [快速开始](/zh/guide/getting-started)。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。
+接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)，以及三份 [企业级实战案例](/zh/guide/recipes)（合同 / 论文 / 无损拼接）。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。

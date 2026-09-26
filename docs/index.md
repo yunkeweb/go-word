@@ -10,8 +10,8 @@ hero:
       text: Get Started
       link: /guide/getting-started
     - theme: alt
-      text: Installation
-      link: /guide/installation
+      text: Recipes
+      link: /guide/recipes
     - theme: alt
       text: GitHub
       link: https://github.com/yunkeweb/go-word
@@ -38,6 +38,34 @@ features:
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
   <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.8.0"><img src="https://img.shields.io/badge/release-v0.8.0-green.svg" alt="v0.8.0" /></a>
 </p>
+
+## Core advantages
+
+Production Word pipelines usually stall on four constraints: shipping a binary into an air-gapped network, keeping RAM flat on multi-hundred-page extracts, emitting equations Microsoft Word can edit, and filling legal templates without a second templating stack.
+
+| Constraint | GoWord | Typical PHP / Python stack | Other Go `.docx` writers |
+| --- | --- | --- | --- |
+| Language & deps | Go 1.21+ **standard library only** | runtime + XML / ZIP extras | often stdlib, write-only surface |
+| Extract memory | `StreamExtractText` **O(1)** extra heap | load the whole package / DOM | full document tree |
+| Equations | LaTeX → native **OMML** (`m:oMathPara`) | image, OLE, or omit | omit |
+| Templates | `${var \| pipe}` + `${block}` / `${if}` | PHPWord macros or Jinja→docx | omit or string replace |
+| Merge isolation | `AppendDocument` remaps styles, bookmarks, `rId` | ZIP copy, colliding `image1.png` | omit |
+| License | LGPL v3 | mixed | AGPL or MIT write-only |
+
+GoWord keeps the PHPWord names (`AddSection`, `AddText`, `IOFactory`, `TemplateProcessor`) on a pure-Go OpenXML writer. Three copy-paste programs that combine these advantages live under [Enterprise Recipes](/guide/recipes).
+
+## Benchmarks
+
+Numbers from `go test -benchmem` on Intel Core i7-10870H, Windows amd64. Allocations are the stable signal; wall time moves with disk and CPU. Full tables, hardware notes, and a streaming-extract occupancy example: [Benchmarks](/guide/benchmarks).
+
+| Workload | ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| `BenchmarkSaveDocx` — 30 paragraphs + 20×5 table | 1.88e6 | 163 KiB | 949 |
+| `BenchmarkTableRender` — 50×8 table | 2.76e6 | 180 KiB | 1820 |
+| `BenchmarkTemplateProcess` — two `${}` replacements | 1.43e6 | 238 KiB | 703 |
+| `BenchmarkStreamWriter` — incremental ZIP | 1.55e6 | 142 KiB | 627 |
+
+`B/op` is extra heap per iteration, not the size of the `.docx`. Stream extract discards each paragraph buffer after the callback, so extra memory stays O(1) relative to file size.
 
 ## Feature comparison
 
@@ -94,4 +122,4 @@ func main() {
 go get github.com/yunkeweb/go-word@v0.8.0
 ```
 
-Continue with [Installation](/guide/installation) and [Quick Start](/guide/getting-started). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).
+Continue with [Installation](/guide/installation), [Quick Start](/guide/getting-started), and the three [Enterprise Recipes](/guide/recipes) (contracts, academic papers, lossless splice). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).
