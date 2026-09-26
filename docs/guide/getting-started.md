@@ -48,11 +48,11 @@ func main() {
 	doc.SetDefaultFontSize(11)
 
 	info := doc.GetDocInfo()
-	info.Title = "GoWord v0.8.0"
+	info.Title = "GoWord v0.9.0"
 	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.8.0", 1)
+	sec.AddTitle("GoWord v0.9.0", 1)
 	sec.AddText("Native Office Math:")
 	sec.AddMath(`\frac{a}{b}`)
 
@@ -106,5 +106,8 @@ func Open(filePath string) (*Document, error)
 | --- | --- |
 | How the ZIP is assembled | [Architecture](./architecture) |
 | Paragraphs, tables, images | [Paragraphs & Runs](./paragraph) |
+| SDT form controls | [Structured Document Tags](./sdt) |
+| Repeating headers / cantSplit | [Tables](./table#setheader-setcantsplit-setvalign-settextdirection) |
+| Tiled watermark and AllowEdit | [Watermark & Protection](./protect) |
 | LaTeX → Word equations | [Office Math](./math) |
 | Charts | [DrawingML Charts](./charts) |

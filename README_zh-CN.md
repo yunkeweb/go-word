@@ -14,6 +14,10 @@
 ## 核心特性
 
 - **Zero External Dependencies（零第三方依赖）** — 100% Go 标准库（`encoding/xml`、`archive/zip`、`image`、`sync`）。`go.mod` 不含任何外部 `require`。
+- **SDT 结构化表单控件** — `AddSDTText`、`AddSDTDropdown`、`AddSDTDate`、`AddSDTCheckbox` 写出 Word 内容控件（`w:sdt` → `w:sdtPr` → `w:sdtContent`），复选框使用 Word 2010 `w14:checkbox`。
+- **表格高级版式** — 跨页重复页眉（`w:tblHeader`，`SetHeader` / `SetHeaderRow`）、行禁止跨页断裂（`w:cantSplit`）、单元格垂直对齐（`SetVAlign`）与文本方向（`SetTextDirection`）。
+- **平铺 / 图片水印** — `SetTextWatermark(text, WatermarkOptions{Tile, Angle, …})` 写出 3×3 VML 网格；`SetImageWatermark` / `SetImageWatermarkFile` 写入洗白图片水印。
+- **区域编辑例外** — `Protect` 仍写出 `w:documentProtection`；段落、单元格或表格上的 `AllowEdit("Everyone")` 包裹 `w:permStart` / `w:permEnd`，这些区域在保护开启后仍可编辑。
 - **Office Math (OMML)** — `AddMath` 将基础 LaTeX（`\frac{a}{b}`、`x^{2}`、`\sqrt{x_1}`、`\pi`）转译为 Word 原生 `m:oMathPara` / `m:oMath` 公式，可在公式编辑器中双击编辑。
 - **Document Merger（无损文档合并）** — `AppendDocument` 克隆源节，并重映射冲突的样式 ID、书签名以及图片 `rId` / 媒体部件，多份文档拼接后资源彼此隔离。
 - **DrawingML & Charts** — 柱状、条形、折线、饼图、面积图、堆叠图与双轴组合图，以及矢量形状与文本框（`wps:wsp`、`w:txbxContent`），支持填充、边框与内嵌文字。
@@ -26,14 +30,14 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.8.0
+go get github.com/yunkeweb/go-word@v0.9.0
 ```
 
 需要 **Go 1.21** 或更高版本。
 
 ## 快速开始
 
-创建文档、插入原生 OMML 公式、绘制 DrawingML 形状，并启用两栏排版：
+创建一份受保护的表单：SDT 控件、跨页重复表头、平铺斜向水印，以及可编辑例外区域：
 
 ```go
 package main
@@ -49,26 +53,33 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 
-	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.8.0", 1)
-	sec.AddText("Native Office Math:")
-	sec.AddMath(`\frac{a}{b}`)
-
-	p := sec.AddTextRun()
-	p.AddText("Pythagoras: ")
-	p.AddMath(`x^{2} + y^{2} = z^{2}`)
-
-	doc.AddShape(word.ShapeRoundRect, word.ShapeOptions{
-		FillColor: "5B9BD5",
-		LineColor: "2E75B6",
-		Text:      "DrawingML",
-		Font:      style.Font{Bold: true, Color: "FFFFFF"},
+	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{
+		Angle: -45, Color: "C0C0C0", FontSize: 36, Opacity: 0.28,
+		Tile: true, Rows: 3, Cols: 3,
 	})
+	if err := doc.Protect(word.ProtectTypeReadOnly, "goword"); err != nil {
+		log.Fatal(err)
+	}
 
-	cols := doc.AddSection()
-	cols.SetColumns(2, 720, true)
-	cols.AddText("The left column starts here. Word flows this section into two equal columns.")
-	cols.AddText("A separator line is emitted as w:cols w:sep.")
+	sec := doc.AddSection()
+	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddSDTText("Full name", "full_name", "Enter full name")
+	sec.AddSDTDropdown("Department", "dept", map[string]string{
+		"eng": "Engineering",
+		"hr":  "Human Resources",
+	})
+	sec.AddSDTDate("Start date", "start_date", "yyyy-MM-dd")
+	sec.AddText("Party A: ________________").AllowEdit("Everyone")
+
+	tbl := sec.AddTable(style.Table{Width: 9000})
+	hdr := tbl.AddRow()
+	tbl.SetHeaderRow(hdr)
+	hdr.SetCantSplit(true)
+	hdr.AddCell(3000).SetVAlign("center").AddText("Field", style.Font{Bold: true})
+	hdr.AddCell(6000).SetVAlign("center").AddText("Value", style.Font{Bold: true})
+	row := tbl.AddRow()
+	row.AddCell(3000).SetTextDirection("tbRl").AddText("备注")
+	row.AddCell(6000).AllowEdit("Everyone").AddText("CN-2026-001")
 
 	if err := doc.Save("hello.docx"); err != nil {
 		log.Fatal(err)
@@ -80,12 +91,13 @@ func main() {
 
 | 示例 | 内容 |
 | --- | --- |
-| [`examples/simple`](examples/simple) | 样式、标题与第一份 `.docx` |
+| [`examples/v0.9.0_sdt`](examples/v0.9.0_sdt) | 纯文本、下拉、日期、复选框 SDT |
+| [`examples/v0.9.0_table_advanced`](examples/v0.9.0_table_advanced) | `tblHeader`、`cantSplit`、`vAlign`、`textDirection` |
+| [`examples/v0.9.0_watermark_security`](examples/v0.9.0_watermark_security) | 平铺文字水印、图片洗白、`AllowEdit` |
 | [`examples/v0.8.0_demo`](examples/v0.8.0_demo) | OMML、DrawingML 形状、分栏、`AppendDocument` |
-| [`examples/v0.7.0_demo`](examples/v0.7.0_demo) | 面积图/组合图与模板管道 |
-| [`examples/all_in_one`](examples/all_in_one) | 更广的 Writer 能力合集 |
+| [`examples/simple`](examples/simple) | 样式、标题与第一份 `.docx` |
 
-包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。
+包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。站点：[yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/zh/)。
 
 ## 文档合并
 

@@ -29,6 +29,12 @@ features:
     details: StreamExtractText / StreamExtractImages 用 xml.Decoder 遍历 .docx ZIP，段落缓冲在回调后立即丢弃。
   - title: 模板 Engine v2
     details: 嵌套 ${block} 循环、${if} 条件，以及 ${var | pipe} 链式过滤器（formatDate、formatCurrency、trim、upper、truncate、default）。
+  - title: SDT 表单控件
+    details: AddSDTText、AddSDTDropdown、AddSDTDate、AddSDTCheckbox 写出 Word 内容控件（w:sdt → w:sdtPr → w:sdtContent），复选框使用 Word 2010 w14:checkbox。
+  - title: 表格高级版式
+    details: 跨页重复页眉（w:tblHeader）、行禁止跨页断裂（w:cantSplit）、单元格垂直对齐（SetVAlign）与文本方向（SetTextDirection）。
+  - title: 平铺水印与区域保护
+    details: SetTextWatermark 铺满 VML 网格；SetImageWatermarkFile 写入洗白图片。Protect 加上 AllowEdit 写出仍可编辑的 w:permStart / w:permEnd 区域。
 ---
 
 <p align="center">
@@ -36,7 +42,7 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.8.0"><img src="https://img.shields.io/badge/release-v0.8.0-green.svg" alt="v0.8.0" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.9.0"><img src="https://img.shields.io/badge/release-v0.9.0-green.svg" alt="v0.9.0" /></a>
 </p>
 
 ## 核心优势
@@ -52,7 +58,7 @@ features:
 | 合并隔离 | `AppendDocument` 重映射样式、书签、`rId` | ZIP 拷贝，`image1.png` 互相覆盖 | 省略 |
 | 协议 | LGPL v3 | 混杂 | AGPL 或 MIT 只写 |
 
-GoWord 把 PHPWord 的名字（`AddSection`、`AddText`、`IOFactory`、`TemplateProcessor`）落到纯 Go 的 OpenXML 写出器上。把这些优势拼在一起的三份可复制程序见 [企业级实战案例](/zh/guide/recipes)。
+GoWord 把 PHPWord 的名字（`AddSection`、`AddText`、`IOFactory`、`TemplateProcessor`）落到纯 Go 的 OpenXML 写出器上。把这些优势拼在一起的四份可复制程序见 [企业级实战案例](/zh/guide/recipes)。
 
 ## 性能基准
 
@@ -83,10 +89,12 @@ GoWord 把 PHPWord 的公开 API（`AddSection`、`AddText`、`IOFactory`、`Tem
 | 矢量形状 `wps:wsp` | ✓ | ✓ | ✓ | ✓ | |
 | 多栏 `w:cols` | ✓ | ✓ | ✓ | | |
 | 嵌套表 + `vMerge` / `gridSpan` | ✓ | ✓ | ✓ | ✓ | |
+| 跨页 `tblHeader` / `cantSplit` / `textDirection` | ✓ | ✓ | ✓ | | |
+| SDT 内容控件（`w:sdt`） | ✓ | ✓ | ✓ | | |
 | 模板 `${var \| pipe}` + `${block}` / `${if}` | ✓ | ✓ | 模板 | | |
 | O(1) 流式提取 | ✓ | | | | |
 | 样式 / 书签 / `rId` 隔离合并 | ✓ | | ✓ | | |
-| 水印 + `w:documentProtection` | ✓ | ✓ | ✓ | | |
+| 平铺 / 图片水印 + `w:permStart` 例外 | ✓ | ✓ | ✓ | | |
 
 PHPWord 是 API 祖先。unioffice 是付费的多格式 Office SDK。两款轻量 Go 写出器覆盖段落（go-docx 另含图片与表格），没有 OMML、图表、流式提取与标识符安全合并。
 
@@ -99,19 +107,16 @@ import (
 	"log"
 
 	"github.com/yunkeweb/go-word"
-	"github.com/yunkeweb/go-word/style"
 )
 
 func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.8.0", 1)
+	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
-	doc.AddShape(word.ShapeRoundRect, word.ShapeOptions{
-		FillColor: "5B9BD5", Text: "DrawingML",
-		Font: style.Font{Bold: true, Color: "FFFFFF"},
-	})
+	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
 	if err := doc.Save("hello.docx"); err != nil {
 		log.Fatal(err)
 	}
@@ -119,7 +124,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.8.0
+go get github.com/yunkeweb/go-word@v0.9.0
 ```
 
-接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)，以及三份 [企业级实战案例](/zh/guide/recipes)（合同 / 论文 / 无损拼接）。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。
+接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)、[SDT](/zh/guide/sdt)、[表格](/zh/guide/table)、[水印与保护](/zh/guide/protect)，以及四份 [企业级实战案例](/zh/guide/recipes)。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。

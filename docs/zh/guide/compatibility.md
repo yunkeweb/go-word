@@ -25,7 +25,10 @@ GoWord 写出 **Office Open XML WordprocessingML 2007** 包（`ECMA-376` / ISO/I
 | Word 2010 形状 | `wps:wsp` / `a:prstGeom` | 矩形、圆角矩形、箭头、文本框 |
 | 域 | `w:instrText`（`PAGE`、`TOC`、`NUMPAGES`） | 用“更新域”刷新 |
 | 保护 | `w:documentProtection` | 只读 / 批注 / 修订 / 窗体 |
-| 水印 | 页眉中的 VML `PowerPlusWaterMarkObject` | 斜向艺术字 |
+| 编辑例外 | `w:permStart` / `w:permEnd` | `AllowEdit` 区域保持可写 |
+| 水印 | 页眉中的 VML `PowerPlusWaterMarkObject` | 斜向或平铺艺术字；图片用水印为 `WordPictureWatermark` |
+| SDT | `w:sdt` / `w:sdtPr` / `w:sdtContent` | 纯文本、下拉、日期、`w14:checkbox` |
+| 表格行 / 单元格 | `w:tblHeader`、`w:cantSplit`、`w:vAlign`、`w:textDirection` | 跨页表头、禁止断行、竖排文字 |
 
 ## 测试套件强制的严格规则
 

@@ -14,6 +14,10 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 ## Features
 
 - **Zero External Dependencies** — 100% Go standard library (`encoding/xml`, `archive/zip`, `image`, `sync`). `go.mod` has no third-party `require`.
+- **SDT form controls** — `AddSDTText`, `AddSDTDropdown`, `AddSDTDate`, and `AddSDTCheckbox` emit Word content controls (`w:sdt` → `w:sdtPr` → `w:sdtContent`), including Word 2010 `w14:checkbox`.
+- **Table Mechanics Plus** — repeating headers (`w:tblHeader` via `SetHeader` / `SetHeaderRow`), unbreakable rows (`w:cantSplit`), cell vertical align (`SetVAlign`), and text direction (`SetTextDirection`).
+- **Tiled / image watermarks** — `SetTextWatermark(text, WatermarkOptions{Tile, Angle, …})` writes a 3×3 VML grid; `SetImageWatermark` / `SetImageWatermarkFile` add a washout picture watermark.
+- **Region edit exceptions** — `Protect` still writes `w:documentProtection`; `AllowEdit("Everyone")` on a paragraph, cell, or table wraps `w:permStart` / `w:permEnd` so those ranges stay editable.
 - **Office Math (OMML)** — `AddMath` turns basic LaTeX (`\frac{a}{b}`, `x^{2}`, `\sqrt{x_1}`, `\pi`) into Word-native `m:oMathPara` / `m:oMath` equations that open in the built-in equation editor.
 - **Document Merger** — `AppendDocument` clones source sections and remaps colliding style IDs, bookmark names, and image `rId` / media parts so several `.docx` trees splice without resource clashes.
 - **DrawingML & Charts** — bar, column, line, pie, area, stacked, and dual-axis combo charts, plus vector shapes and text boxes (`wps:wsp`, `w:txbxContent`) with fill, outline, and inner text.
@@ -26,14 +30,14 @@ Also included: tables with nested cells, headers/footers, images, lists, footnot
 ## Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.8.0
+go get github.com/yunkeweb/go-word@v0.9.0
 ```
 
 Requires **Go 1.21+**.
 
 ## Quick Start
 
-Create a document, insert a native OMML formula, draw a DrawingML shape, and enable two-column layout:
+Create a protected form with SDT controls, a repeating table header, a tiled diagonal watermark, and an editable exception range:
 
 ```go
 package main
@@ -49,26 +53,33 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 
-	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.8.0", 1)
-	sec.AddText("Native Office Math:")
-	sec.AddMath(`\frac{a}{b}`)
-
-	p := sec.AddTextRun()
-	p.AddText("Pythagoras: ")
-	p.AddMath(`x^{2} + y^{2} = z^{2}`)
-
-	doc.AddShape(word.ShapeRoundRect, word.ShapeOptions{
-		FillColor: "5B9BD5",
-		LineColor: "2E75B6",
-		Text:      "DrawingML",
-		Font:      style.Font{Bold: true, Color: "FFFFFF"},
+	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{
+		Angle: -45, Color: "C0C0C0", FontSize: 36, Opacity: 0.28,
+		Tile: true, Rows: 3, Cols: 3,
 	})
+	if err := doc.Protect(word.ProtectTypeReadOnly, "goword"); err != nil {
+		log.Fatal(err)
+	}
 
-	cols := doc.AddSection()
-	cols.SetColumns(2, 720, true)
-	cols.AddText("The left column starts here. Word flows this section into two equal columns.")
-	cols.AddText("A separator line is emitted as w:cols w:sep.")
+	sec := doc.AddSection()
+	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddSDTText("Full name", "full_name", "Enter full name")
+	sec.AddSDTDropdown("Department", "dept", map[string]string{
+		"eng": "Engineering",
+		"hr":  "Human Resources",
+	})
+	sec.AddSDTDate("Start date", "start_date", "yyyy-MM-dd")
+	sec.AddText("Party A: ________________").AllowEdit("Everyone")
+
+	tbl := sec.AddTable(style.Table{Width: 9000})
+	hdr := tbl.AddRow()
+	tbl.SetHeaderRow(hdr)
+	hdr.SetCantSplit(true)
+	hdr.AddCell(3000).SetVAlign("center").AddText("Field", style.Font{Bold: true})
+	hdr.AddCell(6000).SetVAlign("center").AddText("Value", style.Font{Bold: true})
+	row := tbl.AddRow()
+	row.AddCell(3000).SetTextDirection("tbRl").AddText("Note")
+	row.AddCell(6000).AllowEdit("Everyone").AddText("CN-2026-001")
 
 	if err := doc.Save("hello.docx"); err != nil {
 		log.Fatal(err)
@@ -80,12 +91,13 @@ Runnable samples:
 
 | Example | What it shows |
 | --- | --- |
-| [`examples/simple`](examples/simple) | Styles, titles, and a first `.docx` |
+| [`examples/v0.9.0_sdt`](examples/v0.9.0_sdt) | Plain text, drop-down, date, checkbox SDT |
+| [`examples/v0.9.0_table_advanced`](examples/v0.9.0_table_advanced) | `tblHeader`, `cantSplit`, `vAlign`, `textDirection` |
+| [`examples/v0.9.0_watermark_security`](examples/v0.9.0_watermark_security) | Tiled text watermark, image washout, `AllowEdit` |
 | [`examples/v0.8.0_demo`](examples/v0.8.0_demo) | OMML, DrawingML shapes, columns, `AppendDocument` |
-| [`examples/v0.7.0_demo`](examples/v0.7.0_demo) | Area/combo charts and template pipes |
-| [`examples/all_in_one`](examples/all_in_one) | Broader Writer surface in one file |
+| [`examples/simple`](examples/simple) | Styles, titles, and a first `.docx` |
 
-API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word).
+API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word). Site: [yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/).
 
 ## Document merger
 

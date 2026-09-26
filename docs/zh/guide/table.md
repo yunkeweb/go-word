@@ -28,8 +28,57 @@ func (t *Table) SetWidth(w int)
 | --- | --- | --- |
 | `GridSpan` | `w:gridSpan` | 横向合并。跨度计入 `CountColumns`。 |
 | `VMerge` | `w:vMerge` | 首行 `"restart"`，后续行 `"continue"`。 |
-| `VAlign` | `w:vAlign` | `top` / `center` / `bottom`。 |
+| `VAlign` | `w:vAlign` | `top` / `center` / `bottom`。优先使用 `Cell.SetVAlign`。 |
+| `TextDir` | `w:textDirection` | `lrTb`、`tbRl`、`btLr` 等。优先使用 `Cell.SetTextDirection`。 |
 | `Shading.Fill` | `w:shd w:fill` | 不含 `#` 的十六进制填充。 |
+
+## SetHeader / SetCantSplit / SetVAlign / SetTextDirection {#setheader-setcantsplit-setvalign-settextdirection}
+
+跨页重复页眉（`w:tblHeader`）与行禁止跨页断裂（`w:cantSplit`）写在 `w:trPr` 上。垂直对齐（`w:vAlign`）与文本方向（`w:textDirection`）写在 `w:tcPr` 上。行属性子节点顺序为 `cantSplit` → `trHeight` → `tblHeader`（CT_TrPrBase）。
+
+### 签名
+
+```go
+func (t *Table) SetHeaderRow(row *Row) *Table
+func (r *Row) SetHeader(v bool) *Row
+func (r *Row) SetCantSplit(v bool) *Row
+func (c *Cell) SetVAlign(v string) *Cell
+func (c *Cell) SetTextDirection(v string) *Cell
+```
+
+### 参数
+
+| 名称 | 类型 | 说明 |
+| --- | --- | --- |
+| `row` | `*Row` | 页眉行。`SetHeaderRow` 等于 `row.SetHeader(true)`。Word 会在每页表顶重复连续的页眉行。 |
+| `v`（SetHeader） | `bool` | 写出 `w:tblHeader`。 |
+| `v`（SetCantSplit） | `bool` | 写出 `w:cantSplit`，该行保持在同一页。 |
+| `v`（SetVAlign） | `string` | `top`、`center` / `middle`、`bottom`、`both` / `justify`。 |
+| `v`（SetTextDirection） | `string` | `lrTb` / `horizontal`、`tbRl` / `vertical`、`btLr`、`lrTbV`、`tbRlV`、`tbLrV`。 |
+
+### 注意
+
+- `SetHeader(true)` 与 `SetHeaderRow` 等价，任选其一。
+- 页眉行常同时设置 `SetCantSplit`：重复页眉保持完整。
+- `w:tcPr` 上 `w:textDirection` 写在 `w:vAlign` **之前**。
+
+### 示例
+
+```go
+tbl := sec.AddTable(style.Table{Width: 9000})
+hdr := tbl.AddRow(400)
+tbl.SetHeaderRow(hdr)
+hdr.SetCantSplit(true)
+hdr.AddCell(3000).SetVAlign("center").AddText("Item", style.Font{Bold: true})
+hdr.AddCell(6000).SetVAlign("center").AddText("Note", style.Font{Bold: true})
+
+row := tbl.AddRow(1600)
+row.SetCantSplit(true)
+row.AddCell(1500).SetVAlign("center").SetTextDirection("tbRl").AddText("竖排")
+row.AddCell(7500).SetVAlign("bottom").AddText("This row stays on one page.")
+```
+
+带 48 行重复页眉的示例见 [`examples/v0.9.0_table_advanced`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_table_advanced)。
 
 ## 嵌套表
 

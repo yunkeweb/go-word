@@ -1,14 +1,15 @@
 # Enterprise Recipes
 
-Three complete programs that teams copy into a `main.go` and run with `go run .`. Each writes a `.docx` Microsoft Word 2007 through Microsoft 365 opens without a repair dialog.
+Four complete programs that teams copy into a `main.go` and run with `go run .`. Each writes a `.docx` Microsoft Word 2007 through Microsoft 365 opens without a repair dialog.
 
 | Recipe | APIs in play | Output |
 | --- | --- | --- |
 | [1. Contract and financial report](#1-contract-and-financial-report) | Template pipes, `${block}` / `${if}`, nested `w:tbl` | `contract-report.docx` |
 | [2. Academic and engineering paper](#2-academic-and-engineering-paper) | `AddMath` OMML, `SetColumns`, `AddTOC` | `paper.docx` |
 | [3. Lossless multi-document splice](#3-lossless-multi-document-splice) | `AppendDocument` + style / bookmark / `rId` isolation | `dossier.docx` |
+| [4. Onboarding form, tiled watermark, edit exceptions](#4-onboarding-form-watermark-and-exceptions) | `AddSDT*`, `SetHeaderRow`, `SetTextWatermark`, `Protect`, `AllowEdit` | `onboarding.docx` |
 
-Related reference pages: [Template Engine v2](./template), [Tables](./table), [Office Math](./math), [Columns](./columns), [TOC](./toc), [Document Merger](./merger).
+Related reference pages: [Template Engine v2](./template), [Tables](./table), [SDT form controls](./sdt), [Watermark & Protection](./protect), [Office Math](./math), [Columns](./columns), [TOC](./toc), [Document Merger](./merger).
 
 ---
 
@@ -177,7 +178,7 @@ func main() {
 	cover.AddFooter().AddPageNumber()
 
 	cover.AddTitle("Maximum bending stress of a simply supported beam", 1)
-	cover.AddText("Yunke Research  ·  GoWord v0.8.0  ·  26 September 2026", style.Font{Italic: true, Size: 11})
+	cover.AddText("Yunke Research  ·  GoWord v0.9.0  ·  26 September 2026", style.Font{Italic: true, Size: 11})
 	cover.AddText("Abstract. A concentrated force at mid-span is reduced to a closed-form peak stress. Equations are Office Math (OMML), not pictures. Right-click the table of contents and choose Update Field after opening the file.")
 	cover.AddTitle("Contents", 1)
 	cover.AddTOC(nil, nil, 1, 2)
@@ -330,3 +331,79 @@ Three pages, each starting after a next-page section break.
 Unzipping the package never overwrites a picture. Internal hyperlinks that pointed at `shared` in the cloned trees are rewritten to the prefixed names. The OMML fraction from the technical note stays editable.
 
 Default prefixes (when the option is empty) are `src_` for both styles and bookmarks. Empty `SectionBreak` becomes `nextPage`. See [Document Merger](./merger) and [FAQ — style remapping](./faq).
+
+---
+
+## 4. Onboarding form, tiled watermark, edit exceptions {#4-onboarding-form-watermark-and-exceptions}
+
+A protected onboarding pack: four SDT content controls, a repeating table header, a 3×3 tiled **CONFIDENTIAL** watermark, and two `w:permStart` exception ranges that stay editable while the rest of the file is read-only.
+
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/yunkeweb/go-word"
+	"github.com/yunkeweb/go-word/style"
+)
+
+func main() {
+	doc := word.New()
+	doc.SetDefaultFontName("Calibri")
+	doc.SetDefaultAsianFontName("Microsoft YaHei")
+
+	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{
+		Angle: -45, Color: "C0C0C0", FontSize: 36, Opacity: 0.28,
+		Tile: true, Rows: 3, Cols: 3,
+	})
+	if err := doc.Protect(word.ProtectTypeReadOnly, "goword"); err != nil {
+		log.Fatal(err)
+	}
+
+	sec := doc.AddSection()
+	sec.AddTitle("Employee onboarding", 1)
+	sec.AddText("Locked clauses stay grey. Highlighted ranges are w:permStart exceptions. Password: goword.")
+
+	sec.AddSDTText("Full name", "full_name", "Enter full name")
+	sec.AddSDTDropdown("Department", "dept", map[string]string{
+		"eng": "Engineering",
+		"hr":  "Human Resources",
+	})
+	sec.AddSDTDate("Start date", "start_date", "yyyy-MM-dd")
+	p := sec.AddTextRun()
+	p.AddText("I have read the handbook  ")
+	p.AddSDTCheckbox("Handbook", "handbook_ack", false)
+
+	sec.AddText("Party A: ________________", style.Font{Bold: true}).AllowEdit("Everyone")
+
+	tbl := sec.AddTable(style.Table{Width: 9000})
+	hdr := tbl.AddRow(360)
+	tbl.SetHeaderRow(hdr)
+	hdr.SetCantSplit(true)
+	hdr.AddCell(3000, style.Cell{Shading: style.Shading{Fill: "1F4E79"}}).
+		SetVAlign("center").
+		AddText("Field", style.Font{Bold: true, Color: "FFFFFF"})
+	hdr.AddCell(6000, style.Cell{Shading: style.Shading{Fill: "1F4E79"}}).
+		SetVAlign("center").
+		AddText("Value", style.Font{Bold: true, Color: "FFFFFF"})
+	row := tbl.AddRow(320)
+	row.SetCantSplit(true)
+	row.AddCell(3000).AddText("Contract no.")
+	row.AddCell(6000, style.Cell{Shading: style.Shading{Fill: "E2F0D9"}}).
+		AllowEdit("Everyone").
+		AddText("CN-2026-001")
+
+	if err := doc.Save("onboarding.docx"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### What Word shows
+
+- Four content controls (plain text, drop-down, date, checkbox) that fill without the Developer tab. See [SDT](./sdt).
+- Header row repeats on every page (`w:tblHeader`) and stays unsplit (`w:cantSplit`). See [Tables](./table).
+- A 3×3 grey **CONFIDENTIAL** grid in every header. Restrict Editing lists password `goword`. Without it, only the Party A paragraph and the green contract-number cell accept input (`w:permStart` / `w:permEnd`). See [Watermark & Protection](./protect).
+
+Longer samples: [`examples/v0.9.0_sdt`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_sdt), [`examples/v0.9.0_table_advanced`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_table_advanced), [`examples/v0.9.0_watermark_security`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_watermark_security).

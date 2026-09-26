@@ -1,14 +1,15 @@
 # 企业级实战案例
 
-三份完整程序，复制到 `main.go` 后执行 `go run .`。每份都会写出一份 Microsoft Word 2007 至 Microsoft 365 可直接打开、无需修复对话框的 `.docx`。
+四份完整程序，复制到 `main.go` 后执行 `go run .`。每份都会写出一份 Microsoft Word 2007 至 Microsoft 365 可直接打开、无需修复对话框的 `.docx`。
 
 | 案例 | 用到的 API | 输出 |
 | --- | --- | --- |
 | [1. 合同与财务报表](#1-合同与财务报表) | 模板 Pipe、`${block}` / `${if}`、嵌套 `w:tbl` | `contract-report.docx` |
 | [2. 学术与工程论文排版](#2-学术与工程论文排版) | `AddMath` OMML、`SetColumns`、`AddTOC` | `paper.docx` |
 | [3. 跨文档无损拼接](#3-跨文档无损拼接) | `AppendDocument` + 样式 / 书签 / `rId` 隔离 | `dossier.docx` |
+| [4. 入职表单、平铺水印与区域保护](#4-入职表单平铺水印与区域保护) | `AddSDT*`、`SetHeaderRow`、`SetTextWatermark`、`Protect`、`AllowEdit` | `onboarding.docx` |
 
-相关参考：[模板引擎 v2](./template)、[表格](./table)、[Office Math](./math)、[分栏](./columns)、[TOC](./toc)、[文档合并](./merger)。
+相关参考：[模板引擎 v2](./template)、[表格](./table)、[SDT 表单控件](./sdt)、[水印与保护](./protect)、[Office Math](./math)、[分栏](./columns)、[TOC](./toc)、[文档合并](./merger)。
 
 ---
 
@@ -178,7 +179,7 @@ func main() {
 	cover.AddFooter().AddPageNumber()
 
 	cover.AddTitle("简支梁跨中集中力的最大弯曲应力", 1)
-	cover.AddText("云克研究  ·  GoWord v0.8.0  ·  2026 年 9 月 26 日", style.Font{Italic: true, Size: 11})
+	cover.AddText("云克研究  ·  GoWord v0.9.0  ·  2026 年 9 月 26 日", style.Font{Italic: true, Size: 11})
 	cover.AddText("摘要。跨中集中力化为闭式峰值应力。公式是 Office Math（OMML），不是图片。打开文件后请右键目录域，选择“更新域”。")
 	cover.AddTitle("目录", 1)
 	cover.AddTOC(nil, nil, 1, 2)
@@ -331,3 +332,79 @@ func swatch(c color.RGBA) []byte {
 解压该包时图片不会互相覆盖。克隆树里指向 `shared` 的内部超链接会改写到带前缀的名字。技术说明里的 OMML 分数仍可编辑。
 
 选项为空时的默认前缀：样式与书签都是 `src_`。空的 `SectionBreak` 视为 `nextPage`。见 [文档合并](./merger) 与 [FAQ — 样式冲突重映射](./faq)。
+
+---
+
+## 4. 入职表单、平铺水印与区域保护 {#4-入职表单平铺水印与区域保护}
+
+一份受保护的入职包：四个 SDT 内容控件、跨页重复表头、3×3 平铺 **CONFIDENTIAL** 水印，以及两处 `w:permStart` 例外区域——其余正文只读，这两处仍可填写。
+
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/yunkeweb/go-word"
+	"github.com/yunkeweb/go-word/style"
+)
+
+func main() {
+	doc := word.New()
+	doc.SetDefaultFontName("Calibri")
+	doc.SetDefaultAsianFontName("Microsoft YaHei")
+
+	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{
+		Angle: -45, Color: "C0C0C0", FontSize: 36, Opacity: 0.28,
+		Tile: true, Rows: 3, Cols: 3,
+	})
+	if err := doc.Protect(word.ProtectTypeReadOnly, "goword"); err != nil {
+		log.Fatal(err)
+	}
+
+	sec := doc.AddSection()
+	sec.AddTitle("Employee onboarding", 1)
+	sec.AddText("Locked clauses stay grey. Highlighted ranges are w:permStart exceptions. Password: goword.")
+
+	sec.AddSDTText("Full name", "full_name", "Enter full name")
+	sec.AddSDTDropdown("Department", "dept", map[string]string{
+		"eng": "Engineering",
+		"hr":  "Human Resources",
+	})
+	sec.AddSDTDate("Start date", "start_date", "yyyy-MM-dd")
+	p := sec.AddTextRun()
+	p.AddText("I have read the handbook  ")
+	p.AddSDTCheckbox("Handbook", "handbook_ack", false)
+
+	sec.AddText("Party A: ________________", style.Font{Bold: true}).AllowEdit("Everyone")
+
+	tbl := sec.AddTable(style.Table{Width: 9000})
+	hdr := tbl.AddRow(360)
+	tbl.SetHeaderRow(hdr)
+	hdr.SetCantSplit(true)
+	hdr.AddCell(3000, style.Cell{Shading: style.Shading{Fill: "1F4E79"}}).
+		SetVAlign("center").
+		AddText("Field", style.Font{Bold: true, Color: "FFFFFF"})
+	hdr.AddCell(6000, style.Cell{Shading: style.Shading{Fill: "1F4E79"}}).
+		SetVAlign("center").
+		AddText("Value", style.Font{Bold: true, Color: "FFFFFF"})
+	row := tbl.AddRow(320)
+	row.SetCantSplit(true)
+	row.AddCell(3000).AddText("Contract no.")
+	row.AddCell(6000, style.Cell{Shading: style.Shading{Fill: "E2F0D9"}}).
+		AllowEdit("Everyone").
+		AddText("CN-2026-001")
+
+	if err := doc.Save("onboarding.docx"); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### Word 里会看到什么
+
+- 四个内容控件（纯文本、下拉、日期、复选框），无需打开“开发工具”即可填写。见 [SDT](./sdt)。
+- 表头在每页重复（`w:tblHeader`），且禁止跨页断裂（`w:cantSplit`）。见 [表格](./table)。
+- 每个页眉都有 3×3 灰色 **CONFIDENTIAL** 网格。限制编辑列出密码 `goword`。不输入密码时，只有甲方段落与绿色合同编号单元格可以填写（`w:permStart` / `w:permEnd`）。见 [水印与保护](./protect)。
+
+更长的示例：[`examples/v0.9.0_sdt`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_sdt)、[`examples/v0.9.0_table_advanced`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_table_advanced)、[`examples/v0.9.0_watermark_security`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_watermark_security)。

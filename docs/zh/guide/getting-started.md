@@ -48,11 +48,11 @@ func main() {
 	doc.SetDefaultFontSize(11)
 
 	info := doc.GetDocInfo()
-	info.Title = "GoWord v0.8.0"
+	info.Title = "GoWord v0.9.0"
 	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.8.0", 1)
+	sec.AddTitle("GoWord v0.9.0", 1)
 	sec.AddText("Native Office Math:")
 	sec.AddMath(`\frac{a}{b}`)
 
@@ -106,5 +106,8 @@ func Open(filePath string) (*Document, error)
 | --- | --- |
 | ZIP 如何组装 | [架构设计](./architecture) |
 | 段落、表格、图片 | [段落与 Run](./paragraph) |
+| SDT 表单控件 | [结构化文档标签](./sdt) |
+| 跨页表头 / cantSplit | [表格](./table#setheader-setcantsplit-setvalign-settextdirection) |
+| 平铺水印与 AllowEdit | [水印与保护](./protect) |
 | LaTeX → Word 公式 | [Office Math](./math) |
 | 图表 | [DrawingML 图表](./charts) |

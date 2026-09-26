@@ -25,7 +25,10 @@ GoWord writes **Office Open XML WordprocessingML 2007** packages (`ECMA-376` / I
 | Word 2010 shapes | `wps:wsp` / `a:prstGeom` | Rect, roundRect, rightArrow, text box |
 | Fields | `w:instrText` (`PAGE`, `TOC`, `NUMPAGES`) | Refresh with Update Field |
 | Protection | `w:documentProtection` | Read-only / comments / tracked changes / forms |
-| Watermark | VML `PowerPlusWaterMarkObject` in headers | Diagonal word-art |
+| Edit exceptions | `w:permStart` / `w:permEnd` | `AllowEdit` ranges stay writable |
+| Watermark | VML `PowerPlusWaterMarkObject` in headers | Diagonal or tiled word-art; `WordPictureWatermark` for images |
+| SDT | `w:sdt` / `w:sdtPr` / `w:sdtContent` | Plain text, drop-down, date, `w14:checkbox` |
+| Table row / cell | `w:tblHeader`, `w:cantSplit`, `w:vAlign`, `w:textDirection` | Repeating headers, unbreakable rows, vertical text |
 
 ## Strict rules the test suite enforces
 

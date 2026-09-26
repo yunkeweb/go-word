@@ -29,6 +29,12 @@ features:
     details: StreamExtractText and StreamExtractImages walk a .docx ZIP with xml.Decoder. Paragraph buffers are discarded after each callback.
   - title: Template Engine v2
     details: Nested ${block} loops, ${if} comparisons, and chained ${var | pipe} filters (formatDate, formatCurrency, trim, upper, truncate, default).
+  - title: SDT Form Controls
+    details: AddSDTText, AddSDTDropdown, AddSDTDate, and AddSDTCheckbox write Word content controls (w:sdt → w:sdtPr → w:sdtContent), including Word 2010 w14:checkbox.
+  - title: Table Mechanics Plus
+    details: Repeating headers (w:tblHeader), unbreakable rows (w:cantSplit), cell vertical align (SetVAlign), and text direction (SetTextDirection).
+  - title: Tiled Watermark & Edit Exceptions
+    details: SetTextWatermark tiles a VML grid; SetImageWatermarkFile adds washout. Protect plus AllowEdit writes w:permStart / w:permEnd ranges that stay editable.
 ---
 
 <p align="center">
@@ -36,7 +42,7 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.8.0"><img src="https://img.shields.io/badge/release-v0.8.0-green.svg" alt="v0.8.0" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.9.0"><img src="https://img.shields.io/badge/release-v0.9.0-green.svg" alt="v0.9.0" /></a>
 </p>
 
 ## Core advantages
@@ -52,7 +58,7 @@ Production Word pipelines usually stall on four constraints: shipping a binary i
 | Merge isolation | `AppendDocument` remaps styles, bookmarks, `rId` | ZIP copy, colliding `image1.png` | omit |
 | License | LGPL v3 | mixed | AGPL or MIT write-only |
 
-GoWord keeps the PHPWord names (`AddSection`, `AddText`, `IOFactory`, `TemplateProcessor`) on a pure-Go OpenXML writer. Three copy-paste programs that combine these advantages live under [Enterprise Recipes](/guide/recipes).
+GoWord keeps the PHPWord names (`AddSection`, `AddText`, `IOFactory`, `TemplateProcessor`) on a pure-Go OpenXML writer. Four copy-paste programs that combine these advantages live under [Enterprise Recipes](/guide/recipes).
 
 ## Benchmarks
 
@@ -83,10 +89,12 @@ GoWord ports the PHPWord public API (`AddSection`, `AddText`, `IOFactory`, `Temp
 | Vector shapes `wps:wsp` | ✓ | ✓ | ✓ | ✓ | |
 | Multi-column `w:cols` | ✓ | ✓ | ✓ | | |
 | Nested tables + `vMerge` / `gridSpan` | ✓ | ✓ | ✓ | ✓ | |
+| Repeating `tblHeader` / `cantSplit` / `textDirection` | ✓ | ✓ | ✓ | | |
+| SDT content controls (`w:sdt`) | ✓ | ✓ | ✓ | | |
 | Template `${var \| pipe}` + `${block}` / `${if}` | ✓ | ✓ | templates | | |
 | O(1) stream extract | ✓ | | | | |
 | Merge with style / bookmark / `rId` isolation | ✓ | | ✓ | | |
-| Watermark + `w:documentProtection` | ✓ | ✓ | ✓ | | |
+| Tiled / image watermark + `w:permStart` exceptions | ✓ | ✓ | ✓ | | |
 
 PHPWord is the API ancestor. unioffice is a paid, multi-format Office SDK. The two lightweight Go writers cover paragraphs (and, for go-docx, pictures and tables) and stop short of OMML, charts, streaming extract, and identifier-safe merge.
 
@@ -99,19 +107,16 @@ import (
 	"log"
 
 	"github.com/yunkeweb/go-word"
-	"github.com/yunkeweb/go-word/style"
 )
 
 func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.8.0", 1)
+	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
-	doc.AddShape(word.ShapeRoundRect, word.ShapeOptions{
-		FillColor: "5B9BD5", Text: "DrawingML",
-		Font: style.Font{Bold: true, Color: "FFFFFF"},
-	})
+	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
 	if err := doc.Save("hello.docx"); err != nil {
 		log.Fatal(err)
 	}
@@ -119,7 +124,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.8.0
+go get github.com/yunkeweb/go-word@v0.9.0
 ```
 
-Continue with [Installation](/guide/installation), [Quick Start](/guide/getting-started), and the three [Enterprise Recipes](/guide/recipes) (contracts, academic papers, lossless splice). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).
+Continue with [Installation](/guide/installation), [Quick Start](/guide/getting-started), [SDT](/guide/sdt), [Tables](/guide/table), [Watermark & Protection](/guide/protect), and the four [Enterprise Recipes](/guide/recipes). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).

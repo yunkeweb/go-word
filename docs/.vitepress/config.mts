@@ -30,6 +30,7 @@ function enSidebar() {
       items: [
         { text: 'Paragraphs & Runs', link: '/guide/paragraph' },
         { text: 'Tables & Nested Cells', link: '/guide/table' },
+        { text: 'SDT Form Controls', link: '/guide/sdt' },
         { text: 'Images & Shapes', link: '/guide/image' },
         { text: 'Headers, Footers & Page Numbers', link: '/guide/header-footer' },
         { text: 'Watermark & Document Protection', link: '/guide/protect' },
@@ -97,9 +98,10 @@ function zhSidebar() {
       items: [
         { text: '段落与 Run', link: '/zh/guide/paragraph' },
         { text: '表格与嵌套单元格', link: '/zh/guide/table' },
+        { text: 'SDT 表单控件', link: '/zh/guide/sdt' },
         { text: '图片与 Shape', link: '/zh/guide/image' },
         { text: '页眉页脚与页码', link: '/zh/guide/header-footer' },
-        { text: '水印与只读保护', link: '/zh/guide/protect' },
+        { text: '水印与文档保护', link: '/zh/guide/protect' },
       ],
     },
     {
@@ -201,6 +203,7 @@ export default defineConfig({
             items: [
               { text: 'Paragraphs & Runs', link: '/guide/paragraph' },
               { text: 'Tables', link: '/guide/table' },
+              { text: 'SDT Form Controls', link: '/guide/sdt' },
               { text: 'Images & Shapes', link: '/guide/image' },
               { text: 'Headers & Footers', link: '/guide/header-footer' },
               { text: 'Protection', link: '/guide/protect' },
@@ -266,6 +269,7 @@ export default defineConfig({
             items: [
               { text: '段落与 Run', link: '/zh/guide/paragraph' },
               { text: '表格', link: '/zh/guide/table' },
+              { text: 'SDT 表单控件', link: '/zh/guide/sdt' },
               { text: '图片与 Shape', link: '/zh/guide/image' },
               { text: '页眉页脚', link: '/zh/guide/header-footer' },
               { text: '水印与保护', link: '/zh/guide/protect' },

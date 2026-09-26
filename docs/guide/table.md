@@ -28,8 +28,57 @@ func (t *Table) SetWidth(w int)
 | --- | --- | --- |
 | `GridSpan` | `w:gridSpan` | Horizontal merge. Span counts toward `CountColumns`. |
 | `VMerge` | `w:vMerge` | `"restart"` on the first row, `"continue"` on the following rows. |
-| `VAlign` | `w:vAlign` | `top` / `center` / `bottom`. |
+| `VAlign` | `w:vAlign` | `top` / `center` / `bottom`. Prefer `Cell.SetVAlign`. |
+| `TextDir` | `w:textDirection` | `lrTb`, `tbRl`, `btLr`, … Prefer `Cell.SetTextDirection`. |
 | `Shading.Fill` | `w:shd w:fill` | Hex fill without `#`. |
+
+## SetHeader / SetCantSplit / SetVAlign / SetTextDirection {#setheader-setcantsplit-setvalign-settextdirection}
+
+Repeating headers (`w:tblHeader`) and unbreakable rows (`w:cantSplit`) live on `w:trPr`. Vertical alignment (`w:vAlign`) and text direction (`w:textDirection`) live on `w:tcPr`. Child order on the row is `cantSplit` → `trHeight` → `tblHeader` (CT_TrPrBase).
+
+### Signature
+
+```go
+func (t *Table) SetHeaderRow(row *Row) *Table
+func (r *Row) SetHeader(v bool) *Row
+func (r *Row) SetCantSplit(v bool) *Row
+func (c *Cell) SetVAlign(v string) *Cell
+func (c *Cell) SetTextDirection(v string) *Cell
+```
+
+### Parameters
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `row` | `*Row` | Header row. `SetHeaderRow` is `row.SetHeader(true)`. Word repeats consecutive header rows at the top of each page. |
+| `v` (SetHeader) | `bool` | Writes `w:tblHeader`. |
+| `v` (SetCantSplit) | `bool` | Writes `w:cantSplit` so the row stays on one page. |
+| `v` (SetVAlign) | `string` | `top`, `center` / `middle`, `bottom`, `both` / `justify`. |
+| `v` (SetTextDirection) | `string` | `lrTb` / `horizontal`, `tbRl` / `vertical`, `btLr`, `lrTbV`, `tbRlV`, `tbLrV`. |
+
+### Notes
+
+- `SetHeader(true)` and `SetHeaderRow` are equivalent. Call either.
+- `SetCantSplit` on a header row is common: the repeating header stays intact.
+- `w:textDirection` is written **before** `w:vAlign` on `w:tcPr`.
+
+### Example
+
+```go
+tbl := sec.AddTable(style.Table{Width: 9000})
+hdr := tbl.AddRow(400)
+tbl.SetHeaderRow(hdr)
+hdr.SetCantSplit(true)
+hdr.AddCell(3000).SetVAlign("center").AddText("Item", style.Font{Bold: true})
+hdr.AddCell(6000).SetVAlign("center").AddText("Note", style.Font{Bold: true})
+
+row := tbl.AddRow(1600)
+row.SetCantSplit(true)
+row.AddCell(1500).SetVAlign("center").SetTextDirection("tbRl").AddText("竖排")
+row.AddCell(7500).SetVAlign("bottom").AddText("This row stays on one page.")
+```
+
+A 48-row sample with repeating headers lives in [`examples/v0.9.0_table_advanced`](https://github.com/yunkeweb/go-word/tree/main/examples/v0.9.0_table_advanced).
 
 ## Nested tables
 
