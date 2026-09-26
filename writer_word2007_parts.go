@@ -157,6 +157,7 @@ func (w *word2007Writer) writeDocumentStart(xw *common.XMLWriter) {
 		"xmlns:w", ooxml.NSW,
 		"xmlns:wne", ooxml.NSWNE,
 		"xmlns:a", ooxml.NSA,
+		"xmlns:c", ooxml.NSC,
 		"xmlns:pic", ooxml.NSPic,
 	)
 	xw.Start("w:body")

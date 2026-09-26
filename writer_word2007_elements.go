@@ -16,23 +16,24 @@ func (w *word2007Writer) writeContainer(xw *common.XMLWriter, els []element.Elem
 	}
 }
 
-func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, inline bool) {
-	if cr, ok := el.(interface {
-		GetCommentRangeStart() *element.Comment
-		GetCommentRangeEnd() *element.Comment
-	}); ok {
-		if c := cr.GetCommentRangeStart(); c != nil && c.CommentID > 0 {
-			xw.Empty("w:commentRangeStart", "w:id", itoa(c.CommentID))
-		}
-		defer func() {
-			if c := cr.GetCommentRangeEnd(); c != nil && c.CommentID > 0 {
-				xw.Empty("w:commentRangeEnd", "w:id", itoa(c.CommentID))
-				xw.Start("w:r")
-				xw.Empty("w:commentReference", "w:id", itoa(c.CommentID))
-				xw.End()
-			}
-		}()
+func writeCommentRangeStart(xw *common.XMLWriter, c *element.Comment) {
+	if c == nil || c.CommentID <= 0 {
+		return
 	}
+	xw.Empty("w:commentRangeStart", "w:id", itoa(c.CommentID))
+}
+
+func writeCommentRangeEnd(xw *common.XMLWriter, c *element.Comment) {
+	if c == nil || c.CommentID <= 0 {
+		return
+	}
+	xw.Empty("w:commentRangeEnd", "w:id", itoa(c.CommentID))
+	xw.Start("w:r")
+	xw.Empty("w:commentReference", "w:id", itoa(c.CommentID))
+	xw.End()
+}
+
+func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, inline bool) {
 	switch v := el.(type) {
 	case *element.Text:
 		w.writeText(xw, v, inline)
@@ -160,6 +161,7 @@ func (w *word2007Writer) writeText(xw *common.XMLWriter, t *element.Text, inline
 	if !inline {
 		xw.Start("w:p")
 		w.writePPrFrom(xw, t.ParagraphStyle)
+		writeCommentRangeStart(xw, t.GetCommentRangeStart())
 	}
 	w.writeTrackedRun(xw, t.GetTrackChange(), func() {
 		xw.Start("w:r")
@@ -178,6 +180,7 @@ func (w *word2007Writer) writeText(xw *common.XMLWriter, t *element.Text, inline
 		xw.End()
 	})
 	if !inline {
+		writeCommentRangeEnd(xw, t.GetCommentRangeEnd())
 		xw.End()
 	}
 }
@@ -216,7 +219,9 @@ func (w *word2007Writer) writeTrackedRun(xw *common.XMLWriter, tc *element.Track
 func (w *word2007Writer) writeTextRun(xw *common.XMLWriter, tr *element.TextRun) {
 	xw.Start("w:p")
 	w.writePPrFrom(xw, tr.ParagraphStyle)
+	writeCommentRangeStart(xw, tr.GetCommentRangeStart())
 	w.writeContainer(xw, tr.Elements(), true)
+	writeCommentRangeEnd(xw, tr.GetCommentRangeEnd())
 	xw.End()
 }
 
@@ -340,21 +345,50 @@ func (w *word2007Writer) numberingID(name string) int {
 	return 1
 }
 
-func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
-	xw.Start("w:tbl")
-	w.writeTblPr(xw, tbl.Style)
-	xw.Start("w:tblGrid")
-	if len(tbl.Rows) > 0 {
-		for _, c := range tbl.Rows[0].Cells {
+func tableGridWidths(tbl *element.Table) []int {
+	n := tbl.CountColumns()
+	if n == 0 {
+		return nil
+	}
+	out := make([]int, n)
+	for _, row := range tbl.Rows {
+		col := 0
+		for _, c := range row.Cells {
+			span := c.Style.GridSpan
+			if span < 1 {
+				span = 1
+			}
 			wd := c.Width
 			if wd == 0 {
 				wd = c.Style.Width
 			}
-			if wd == 0 {
-				wd = 1440
+			if span == 1 && col < n && wd > 0 {
+				out[col] = wd
+			} else if span > 1 && wd > 0 {
+				part := wd / span
+				for k := 0; k < span && col+k < n; k++ {
+					if out[col+k] == 0 {
+						out[col+k] = part
+					}
+				}
 			}
-			xw.Empty("w:gridCol", "w:w", itoa(wd))
+			col += span
 		}
+	}
+	for i, wd := range out {
+		if wd == 0 {
+			out[i] = 1440
+		}
+	}
+	return out
+}
+
+func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
+	xw.Start("w:tbl")
+	w.writeTblPr(xw, tbl.Style)
+	xw.Start("w:tblGrid")
+	for _, wd := range tableGridWidths(tbl) {
+		xw.Empty("w:gridCol", "w:w", itoa(wd))
 	}
 	xw.End()
 	for _, row := range tbl.Rows {
@@ -394,47 +428,10 @@ func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
 }
 
 func (w *word2007Writer) writeTblPr(xw *common.XMLWriter, st style.Table) {
+	// CT_TblPr: tblStyle, tblpPr, tblW, jc, tblInd, tblBorders, shd, tblLayout, tblCellMar.
 	xw.Start("w:tblPr")
 	if st.StyleName != "" {
 		xw.Empty("w:tblStyle", "w:val", st.StyleName)
-	}
-	unit := st.Unit
-	if unit == "" {
-		unit = "dxa"
-	}
-	if st.Width > 0 {
-		xw.Empty("w:tblW", "w:w", itoa(st.Width), "w:type", unit)
-	} else {
-		xw.Empty("w:tblW", "w:w", "0", "w:type", "auto")
-	}
-	if st.Alignment != "" {
-		xw.Empty("w:jc", "w:val", st.Alignment)
-	}
-	if st.Layout != "" {
-		xw.Empty("w:tblLayout", "w:type", st.Layout)
-	}
-	if st.CellMarginTop != 0 || st.CellMarginLeft != 0 || st.CellMarginRight != 0 || st.CellMarginBottom != 0 {
-		xw.Start("w:tblCellMar")
-		if st.CellMarginTop != 0 {
-			xw.Empty("w:top", "w:w", itoa(st.CellMarginTop), "w:type", "dxa")
-		}
-		if st.CellMarginLeft != 0 {
-			xw.Empty("w:left", "w:w", itoa(st.CellMarginLeft), "w:type", "dxa")
-		}
-		if st.CellMarginRight != 0 {
-			xw.Empty("w:right", "w:w", itoa(st.CellMarginRight), "w:type", "dxa")
-		}
-		if st.CellMarginBottom != 0 {
-			xw.Empty("w:bottom", "w:w", itoa(st.CellMarginBottom), "w:type", "dxa")
-		}
-		xw.End()
-	}
-	w.writeBorders(xw, "w:tblBorders", st.Borders)
-	if st.Shading.Fill != "" {
-		w.writeShd(xw, st.Shading)
-	}
-	if st.Indent != 0 {
-		xw.Empty("w:tblInd", "w:w", itoa(st.Indent), "w:type", "dxa")
 	}
 	if p := st.Position; p != nil {
 		attrs := []string{}
@@ -472,6 +469,44 @@ func (w *word2007Writer) writeTblPr(xw *common.XMLWriter, st style.Table) {
 			xw.Empty("w:tblpPr", attrs...)
 		}
 	}
+	unit := st.Unit
+	if unit == "" {
+		unit = "dxa"
+	}
+	if st.Width > 0 {
+		xw.Empty("w:tblW", "w:w", itoa(st.Width), "w:type", unit)
+	} else {
+		xw.Empty("w:tblW", "w:w", "0", "w:type", "auto")
+	}
+	if st.Alignment != "" {
+		xw.Empty("w:jc", "w:val", st.Alignment)
+	}
+	if st.Indent != 0 {
+		xw.Empty("w:tblInd", "w:w", itoa(st.Indent), "w:type", "dxa")
+	}
+	w.writeBorders(xw, "w:tblBorders", st.Borders)
+	if st.Shading.Fill != "" {
+		w.writeShd(xw, st.Shading)
+	}
+	if st.Layout != "" {
+		xw.Empty("w:tblLayout", "w:type", st.Layout)
+	}
+	if st.CellMarginTop != 0 || st.CellMarginLeft != 0 || st.CellMarginRight != 0 || st.CellMarginBottom != 0 {
+		xw.Start("w:tblCellMar")
+		if st.CellMarginTop != 0 {
+			xw.Empty("w:top", "w:w", itoa(st.CellMarginTop), "w:type", "dxa")
+		}
+		if st.CellMarginLeft != 0 {
+			xw.Empty("w:left", "w:w", itoa(st.CellMarginLeft), "w:type", "dxa")
+		}
+		if st.CellMarginBottom != 0 {
+			xw.Empty("w:bottom", "w:w", itoa(st.CellMarginBottom), "w:type", "dxa")
+		}
+		if st.CellMarginRight != 0 {
+			xw.Empty("w:right", "w:w", itoa(st.CellMarginRight), "w:type", "dxa")
+		}
+		xw.End()
+	}
 	xw.End()
 }
 
@@ -499,9 +534,6 @@ func (w *word2007Writer) writeTcPr(xw *common.XMLWriter, c *element.Cell) {
 			xw.Empty("w:vMerge", "w:val", st.VMerge)
 		}
 	}
-	if st.VAlign != "" {
-		xw.Empty("w:vAlign", "w:val", st.VAlign)
-	}
 	w.writeBorders(xw, "w:tcBorders", st.Borders)
 	sh := st.Shading
 	if st.BgColor != "" && sh.Fill == "" {
@@ -522,16 +554,19 @@ func (w *word2007Writer) writeTcPr(xw *common.XMLWriter, c *element.Cell) {
 		if st.PaddingLeft != 0 {
 			xw.Empty("w:left", "w:w", itoa(st.PaddingLeft), "w:type", "dxa")
 		}
-		if st.PaddingRight != 0 {
-			xw.Empty("w:right", "w:w", itoa(st.PaddingRight), "w:type", "dxa")
-		}
 		if st.PaddingBottom != 0 {
 			xw.Empty("w:bottom", "w:w", itoa(st.PaddingBottom), "w:type", "dxa")
+		}
+		if st.PaddingRight != 0 {
+			xw.Empty("w:right", "w:w", itoa(st.PaddingRight), "w:type", "dxa")
 		}
 		xw.End()
 	}
 	if st.TextDir != "" {
 		xw.Empty("w:textDirection", "w:val", st.TextDir)
+	}
+	if st.VAlign != "" {
+		xw.Empty("w:vAlign", "w:val", st.VAlign)
 	}
 	xw.End()
 }
@@ -887,6 +922,9 @@ func (w *word2007Writer) writePPr(xw *common.XMLWriter, p style.Paragraph, style
 }
 
 func (w *word2007Writer) writePPrInner(xw *common.XMLWriter, p style.Paragraph) {
+	// CT_PPr: pStyle, keepNext, keepLines, pageBreakBefore, widowControl, numPr,
+	// pBdr, shd, tabs, suppressAutoHyphens, bidi, spacing, ind, contextualSpacing,
+	// jc, textAlignment, outlineLvl.
 	if p.KeepNext {
 		xw.Empty("w:keepNext")
 	}
@@ -901,6 +939,23 @@ func (w *word2007Writer) writePPrInner(xw *common.XMLWriter, p style.Paragraph) 
 	}
 	if p.NumStyle != "" {
 		w.writeNumPr(xw, p.NumStyle, p.NumLevel)
+	}
+	w.writeBorders(xw, "w:pBdr", p.Borders)
+	if p.Shading.Fill != "" {
+		w.writeShd(xw, p.Shading)
+	}
+	if len(p.Tabs) > 0 {
+		xw.Start("w:tabs")
+		for _, tab := range p.Tabs {
+			xw.Empty("w:tab", "w:val", nonEmpty(tab.Val, "left"), "w:leader", tab.Leader, "w:pos", itoa(tab.Pos))
+		}
+		xw.End()
+	}
+	if p.SuppressAutoHyphens {
+		xw.Empty("w:suppressAutoHyphens")
+	}
+	if p.Bidi {
+		xw.Empty("w:bidi")
 	}
 	if p.Spacing.Before != 0 || p.Spacing.After != 0 || p.Spacing.Line != 0 {
 		attrs := []string{}
@@ -940,34 +995,17 @@ func (w *word2007Writer) writePPrInner(xw *common.XMLWriter, p style.Paragraph) 
 		}
 		xw.Empty("w:ind", attrs...)
 	}
-	if p.Alignment != "" {
-		xw.Empty("w:jc", "w:val", p.Alignment)
-	}
-	if p.OutlineLevel > 0 {
-		xw.Empty("w:outlineLvl", "w:val", itoa(p.OutlineLevel-1))
-	}
-	if p.Bidi {
-		xw.Empty("w:bidi")
-	}
 	if p.ContextualSpacing {
 		xw.Empty("w:contextualSpacing")
+	}
+	if p.Alignment != "" {
+		xw.Empty("w:jc", "w:val", p.Alignment)
 	}
 	if p.TextAlignment != "" {
 		xw.Empty("w:textAlignment", "w:val", p.TextAlignment)
 	}
-	if p.SuppressAutoHyphens {
-		xw.Empty("w:suppressAutoHyphens")
-	}
-	w.writeBorders(xw, "w:pBdr", p.Borders)
-	if p.Shading.Fill != "" {
-		w.writeShd(xw, p.Shading)
-	}
-	if len(p.Tabs) > 0 {
-		xw.Start("w:tabs")
-		for _, tab := range p.Tabs {
-			xw.Empty("w:tab", "w:val", nonEmpty(tab.Val, "left"), "w:leader", tab.Leader, "w:pos", itoa(tab.Pos))
-		}
-		xw.End()
+	if p.OutlineLevel > 0 {
+		xw.Empty("w:outlineLvl", "w:val", itoa(p.OutlineLevel-1))
 	}
 }
 
@@ -996,6 +1034,8 @@ func splitFont(v any) (string, *style.Font) {
 }
 
 func (w *word2007Writer) writeRPr(xw *common.XMLWriter, f style.Font, styleName string) {
+	// CT_RPr: rStyle, rFonts, b, bCs, i, iCs, caps, smallCaps, strike, dstrike,
+	// noProof, vanish, color, spacing, sz, szCs, highlight, u, shd, vertAlign, rtl, lang.
 	xw.Start("w:rPr")
 	if styleName != "" {
 		xw.Empty("w:rStyle", "w:val", styleName)
@@ -1011,17 +1051,20 @@ func (w *word2007Writer) writeRPr(xw *common.XMLWriter, f style.Font, styleName 
 		xw.Empty("w:i")
 		xw.Empty("w:iCs")
 	}
-	if f.SmallCaps {
-		xw.Empty("w:smallCaps")
-	}
 	if f.AllCaps {
 		xw.Empty("w:caps")
+	}
+	if f.SmallCaps {
+		xw.Empty("w:smallCaps")
 	}
 	if f.Strikethrough {
 		xw.Empty("w:strike")
 	}
 	if f.DoubleStrikethrough {
 		xw.Empty("w:dstrike")
+	}
+	if f.NoProof {
+		xw.Empty("w:noProof")
 	}
 	if f.Hidden {
 		xw.Empty("w:vanish")
@@ -1042,25 +1085,23 @@ func (w *word2007Writer) writeRPr(xw *common.XMLWriter, f style.Font, styleName 
 	if f.Underline != "" && f.Underline != style.UnderlineNone {
 		xw.Empty("w:u", "w:val", f.Underline)
 	}
+	shd := f.Shading
+	if f.BgColor != "" && shd.Fill == "" {
+		shd = style.Shading{Val: "clear", Fill: f.BgColor}
+	}
+	if shd.Fill != "" || shd.Val != "" {
+		w.writeShd(xw, shd)
+	}
 	if f.SuperScript {
 		xw.Empty("w:vertAlign", "w:val", "superscript")
 	} else if f.SubScript {
 		xw.Empty("w:vertAlign", "w:val", "subscript")
-	}
-	if f.BgColor != "" {
-		w.writeShd(xw, style.Shading{Val: "clear", Fill: f.BgColor})
 	}
 	if f.RTL {
 		xw.Empty("w:rtl")
 	}
 	if f.Lang != "" {
 		xw.Empty("w:lang", "w:val", f.Lang)
-	}
-	if f.NoProof {
-		xw.Empty("w:noProof")
-	}
-	if f.Shading.Fill != "" || f.Shading.Val != "" {
-		w.writeShd(xw, f.Shading)
 	}
 	xw.End()
 }

@@ -29,6 +29,7 @@ const (
 	NSR       = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 	NSWP      = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
 	NSA       = "http://schemas.openxmlformats.org/drawingml/2006/main"
+	NSC       = "http://schemas.openxmlformats.org/drawingml/2006/chart"
 	NSPic     = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 	NSM       = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 	NSV       = "urn:schemas-microsoft-com:vml"
