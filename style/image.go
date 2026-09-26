@@ -26,4 +26,7 @@ type Image struct {
 	IsWatermark   bool
 	Name          string
 	AltText       string
+	Washout       bool    // VML imagedata gain/blacklevel (Word washout)
+	Opacity       float64 // 0–1; used for watermark fill
+	Scale         float64 // watermark size multiplier; 0 = 1
 }

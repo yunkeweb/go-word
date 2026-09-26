@@ -18,6 +18,29 @@ func (w *word2007Writer) writeContainer(xw *common.XMLWriter, els []element.Elem
 	}
 }
 
+func (w *word2007Writer) nextPermID() string {
+	w.permIndex++
+	return itoa(1000 + w.permIndex)
+}
+
+func (w *word2007Writer) writePermAround(xw *common.XMLWriter, edGrp, ed string, inner func()) {
+	if edGrp == "" && ed == "" {
+		inner()
+		return
+	}
+	id := w.nextPermID()
+	attrs := []string{"w:id", id}
+	if edGrp != "" {
+		attrs = append(attrs, "w:edGrp", edGrp)
+	}
+	if ed != "" {
+		attrs = append(attrs, "w:ed", ed)
+	}
+	xw.Empty("w:permStart", attrs...)
+	inner()
+	xw.Empty("w:permEnd", "w:id", id)
+}
+
 func writeCommentRangeStart(xw *common.XMLWriter, c *element.Comment) {
 	if c == nil || c.CommentID <= 0 {
 		return
@@ -170,31 +193,38 @@ func (w *word2007Writer) writeOLE(xw *common.XMLWriter, o *element.OLEObject, in
 }
 
 func (w *word2007Writer) writeText(xw *common.XMLWriter, t *element.Text, inline bool) {
-	if !inline {
-		xw.Start("w:p")
-		w.writePPrFrom(xw, t.ParagraphStyle)
-		writeCommentRangeStart(xw, t.GetCommentRangeStart())
-	}
-	w.writeTrackedRun(xw, t.GetTrackChange(), func() {
-		xw.Start("w:r")
-		w.writeRPrFrom(xw, t.FontStyle)
-		if tc := t.GetTrackChange(); tc != nil && isDeletion(tc.ChangeType) {
-			attrs := []string{}
-			if t.Content != strings.TrimSpace(t.Content) || strings.ContainsAny(t.Content, "\t\n") {
-				attrs = []string{"xml:space", "preserve"}
-			}
-			xw.Start("w:delText", attrs...)
-			xw.Text(t.Content)
-			xw.End()
-		} else {
-			xw.WT(t.Content)
+	write := func() {
+		if !inline {
+			xw.Start("w:p")
+			w.writePPrFrom(xw, t.ParagraphStyle)
+			writeCommentRangeStart(xw, t.GetCommentRangeStart())
 		}
-		xw.End()
-	})
-	if !inline {
-		writeCommentRangeEnd(xw, t.GetCommentRangeEnd())
-		xw.End()
+		w.writeTrackedRun(xw, t.GetTrackChange(), func() {
+			xw.Start("w:r")
+			w.writeRPrFrom(xw, t.FontStyle)
+			if tc := t.GetTrackChange(); tc != nil && isDeletion(tc.ChangeType) {
+				attrs := []string{}
+				if t.Content != strings.TrimSpace(t.Content) || strings.ContainsAny(t.Content, "\t\n") {
+					attrs = []string{"xml:space", "preserve"}
+				}
+				xw.Start("w:delText", attrs...)
+				xw.Text(t.Content)
+				xw.End()
+			} else {
+				xw.WT(t.Content)
+			}
+			xw.End()
+		})
+		if !inline {
+			writeCommentRangeEnd(xw, t.GetCommentRangeEnd())
+			xw.End()
+		}
 	}
+	if !inline {
+		w.writePermAround(xw, t.EditGroup, t.EditUser, write)
+		return
+	}
+	write()
 }
 
 func isDeletion(changeType string) bool {
@@ -229,12 +259,14 @@ func (w *word2007Writer) writeTrackedRun(xw *common.XMLWriter, tc *element.Track
 }
 
 func (w *word2007Writer) writeTextRun(xw *common.XMLWriter, tr *element.TextRun) {
-	xw.Start("w:p")
-	w.writePPrFrom(xw, tr.ParagraphStyle)
-	writeCommentRangeStart(xw, tr.GetCommentRangeStart())
-	w.writeContainer(xw, tr.Elements(), true)
-	writeCommentRangeEnd(xw, tr.GetCommentRangeEnd())
-	xw.End()
+	w.writePermAround(xw, tr.EditGroup, tr.EditUser, func() {
+		xw.Start("w:p")
+		w.writePPrFrom(xw, tr.ParagraphStyle)
+		writeCommentRangeStart(xw, tr.GetCommentRangeStart())
+		w.writeContainer(xw, tr.Elements(), true)
+		writeCommentRangeEnd(xw, tr.GetCommentRangeEnd())
+		xw.End()
+	})
 }
 
 func (w *word2007Writer) writeLink(xw *common.XMLWriter, l *element.Link, inline bool) {
@@ -409,36 +441,40 @@ func tableGridWidths(tbl *element.Table) []int {
 }
 
 func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
-	xw.Start("w:tbl")
-	w.writeTblPr(xw, tbl.Style)
-	xw.Start("w:tblGrid")
-	for _, wd := range tableGridWidths(tbl) {
-		xw.Empty("w:gridCol", "w:w", itoa(wd))
-	}
-	xw.End()
-	for _, row := range tbl.Rows {
-		xw.Start("w:tr")
-		w.writeTrPr(xw, row)
-		for _, cell := range row.Cells {
-			xw.Start("w:tc")
-			w.writeTcPr(xw, cell)
-			els := cell.Elements()
-			if len(els) == 0 {
-				xw.Start("w:p")
-				xw.End()
-			} else {
-				w.writeContainer(xw, els, false)
-				if cellNeedsTrailingP(els) {
-					xw.Start("w:p")
-					xw.End()
-				}
-			}
-			xw.End()
+	w.writePermAround(xw, tbl.EditGroup, tbl.EditUser, func() {
+		xw.Start("w:tbl")
+		w.writeTblPr(xw, tbl.Style)
+		xw.Start("w:tblGrid")
+		for _, wd := range tableGridWidths(tbl) {
+			xw.Empty("w:gridCol", "w:w", itoa(wd))
 		}
 		xw.End()
-		_ = xw.Flush()
-	}
-	xw.End()
+		for _, row := range tbl.Rows {
+			xw.Start("w:tr")
+			w.writeTrPr(xw, row)
+			for _, cell := range row.Cells {
+				xw.Start("w:tc")
+				w.writeTcPr(xw, cell)
+				w.writePermAround(xw, cell.EditGroup, cell.EditUser, func() {
+					els := cell.Elements()
+					if len(els) == 0 {
+						xw.Start("w:p")
+						xw.End()
+					} else {
+						w.writeContainer(xw, els, false)
+						if cellNeedsTrailingP(els) {
+							xw.Start("w:p")
+							xw.End()
+						}
+					}
+				})
+				xw.End()
+			}
+			xw.End()
+			_ = xw.Flush()
+		}
+		xw.End()
+	})
 }
 
 func cellNeedsTrailingP(els []element.Element) bool {
@@ -958,21 +994,143 @@ func (w *word2007Writer) writeTextWatermark(xw *common.XMLWriter, tw *element.Te
 	xw.End()
 	xw.Empty("o:lock", "v:ext", "edit", "text", "t", "shapetype", "t")
 	xw.End() // shapetype
-	xw.Start("v:shape",
-		"id", "PowerPlusWaterMarkObject",
-		"o:spid", "_x0000_s2049",
-		"type", "#_x0000_t136",
-		"style", "position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;rotation:315;z-index:-251658752;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin",
-		"o:allowincell", "f",
-		"fillcolor", "silver",
-		"stroked", "f",
-	)
-	xw.Empty("v:fill", "opacity", ".5")
-	xw.Empty("v:textpath", "style", `font-family:"Calibri";font-size:1pt`, "on", "t", "string", text)
-	xw.Empty("w10:wrap", "anchorx", "margin", "anchory", "margin")
-	xw.End() // shape
+
+	tiles := textWatermarkTiles(tw)
+	for i, tile := range tiles {
+		id := "PowerPlusWaterMarkObject"
+		if len(tiles) > 1 {
+			id = fmt.Sprintf("PowerPlusWaterMarkObject%d", i+1)
+		}
+		w.writeTextWatermarkShape(xw, id, 2049+i, text, tw, tile)
+	}
 	xw.End() // pict
 	xw.End() // r
+}
+
+type wmTile struct {
+	left, top, width, height float64
+	centered                 bool
+}
+
+func textWatermarkTiles(tw *element.TextWatermark) []wmTile {
+	if !tw.Tile {
+		return []wmTile{{width: 468, height: 117, centered: true}}
+	}
+	rows, cols := tw.TileRows, tw.TileCols
+	if rows < 1 {
+		rows = 3
+	}
+	if cols < 1 {
+		cols = 3
+	}
+	const pageW, pageH = 612.0, 792.0
+	cellW := pageW / float64(cols)
+	cellH := pageH / float64(rows)
+	shapeW := cellW * 0.72
+	shapeH := cellH * 0.28
+	out := make([]wmTile, 0, rows*cols)
+	for r := 0; r < rows; r++ {
+		for c := 0; c < cols; c++ {
+			out = append(out, wmTile{
+				left:   cellW*float64(c) + (cellW-shapeW)/2,
+				top:    cellH*float64(r) + (cellH-shapeH)/2,
+				width:  shapeW,
+				height: shapeH,
+			})
+		}
+	}
+	return out
+}
+
+func (w *word2007Writer) writeTextWatermarkShape(xw *common.XMLWriter, id string, spid int, text string, tw *element.TextWatermark, tile wmTile) {
+	rot := vmlRotation(tw.Angle)
+	color := vmlFillColor(tw.Color)
+	opacity := vmlOpacity(tw.Opacity)
+	font := tw.FontName
+	if font == "" {
+		font = "Calibri"
+	}
+	font = strings.ReplaceAll(font, `"`, "")
+	size := tw.FontSize
+	if size <= 0 {
+		size = 1
+	}
+	var styleAttr string
+	if tile.centered {
+		styleAttr = fmt.Sprintf("position:absolute;margin-left:0;margin-top:0;width:%gpt;height:%gpt;rotation:%s;z-index:-251658752;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin", tile.width, tile.height, rot)
+	} else {
+		styleAttr = fmt.Sprintf("position:absolute;margin-left:%gpt;margin-top:%gpt;width:%gpt;height:%gpt;rotation:%s;z-index:-251658752;mso-position-horizontal-relative:page;mso-position-vertical-relative:page", tile.left, tile.top, tile.width, tile.height, rot)
+	}
+	xw.Start("v:shape",
+		"id", id,
+		"o:spid", fmt.Sprintf("_x0000_s%d", spid),
+		"type", "#_x0000_t136",
+		"style", styleAttr,
+		"o:allowincell", "f",
+		"fillcolor", color,
+		"stroked", "f",
+	)
+	xw.Empty("v:fill", "opacity", opacity)
+	xw.Empty("v:textpath", "style", fmt.Sprintf(`font-family:"%s";font-size:%dpt`, font, size), "on", "t", "string", text)
+	xw.Empty("w10:wrap", "anchorx", "margin", "anchory", "margin")
+	xw.End()
+}
+
+func vmlRotation(angle float64) string {
+	if angle == 0 {
+		angle = -45
+	}
+	r := angle
+	if r < 0 {
+		r += 360
+	}
+	for r >= 360 {
+		r -= 360
+	}
+	if r == float64(int(r)) {
+		return itoa(int(r))
+	}
+	return strconv.FormatFloat(r, 'f', 1, 64)
+}
+
+func vmlFillColor(color string) string {
+	c := strings.TrimSpace(color)
+	if c == "" {
+		return "silver"
+	}
+	if strings.HasPrefix(c, "#") {
+		return c
+	}
+	if len(c) == 6 {
+		hex := true
+		for _, ch := range c {
+			if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) {
+				hex = false
+				break
+			}
+		}
+		if hex {
+			return "#" + c
+		}
+	}
+	return c
+}
+
+func vmlOpacity(v float64) string {
+	if v > 1 {
+		v = v / 100
+	}
+	if v <= 0 {
+		v = 0.5
+	}
+	if v > 1 {
+		v = 1
+	}
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if strings.HasPrefix(s, "0.") {
+		return s[1:]
+	}
+	return s
 }
 
 func (w *word2007Writer) writeImageWatermark(xw *common.XMLWriter, img *element.Image) {
@@ -993,7 +1151,21 @@ func (w *word2007Writer) writeImageWatermark(xw *common.XMLWriter, img *element.
 		"filled", "f",
 		"stroked", "f",
 	)
-	xw.Empty("v:imagedata", "r:id", rid, "o:title", "watermark")
+	imgAttrs := []string{"r:id", rid, "o:title", "watermark"}
+	if img.Style.Washout {
+		imgAttrs = append(imgAttrs, "gain", "19661f", "blacklevel", "22938f")
+	}
+	xw.Empty("v:imagedata", imgAttrs...)
+	if img.Style.Opacity > 0 {
+		op := img.Style.Opacity
+		if op > 1 {
+			op = op / 100
+		}
+		if op > 1 {
+			op = 1
+		}
+		xw.Empty("v:fill", "opacity", vmlOpacity(op))
+	}
 	xw.Empty("w10:wrap", "anchorx", "margin", "anchory", "margin")
 	xw.End()
 	xw.End()
@@ -1017,6 +1189,10 @@ func watermarkPointSize(img *element.Image) (float64, float64) {
 	}
 	if hpt < 36 {
 		hpt = 120
+	}
+	if img.Style.Scale > 0 {
+		wpt *= img.Style.Scale
+		hpt *= img.Style.Scale
 	}
 	return wpt, hpt
 }

@@ -16,22 +16,6 @@ const (
 	ProtectTypeForms          = style.DocProtectForms
 )
 
-// SetTextWatermark stores a document-wide diagonal text watermark applied to
-// every section header as Word-native VML (PowerPlusWaterMarkObject).
-func (d *Document) SetTextWatermark(text string) {
-	d.textWatermark = text
-}
-
-// SetImageWatermark stores a document-wide image watermark applied to every
-// section header as VML v:imagedata (Word watermark drawing).
-func (d *Document) SetImageWatermark(imageBytes []byte) {
-	if len(imageBytes) == 0 {
-		d.imageWatermark = nil
-		return
-	}
-	d.imageWatermark = append([]byte(nil), imageBytes...)
-}
-
 // Protect enables document protection (w:documentProtection). An empty password
 // writes an unenforced-hash protection node; a non-empty password uses the
 // Office SHA-1 / 100000-spin algorithm (ECMA-376).
@@ -133,10 +117,12 @@ func (d *Document) applySectionWatermarks(sec *element.Section) {
 	}
 	for _, h := range headers {
 		if d.textWatermark != "" {
-			h.EnsureTextWatermark(d.textWatermark)
+			tw := h.EnsureTextWatermark(d.textWatermark)
+			applyTextWatermarkOptions(tw, d.textWatermarkOpts)
 		}
 		if len(d.imageWatermark) > 0 {
-			h.EnsureImageWatermark(d.imageWatermark)
+			img := h.EnsureImageWatermark(d.imageWatermark, d.imageWatermarkName)
+			applyImageWatermarkOptions(img, d.imageWatermarkOpts)
 		}
 	}
 }

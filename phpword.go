@@ -27,8 +27,11 @@ type Document struct {
 	comments         []*element.Comment
 	titles           []*element.Title
 	charts           []*element.Chart
-	textWatermark    string
-	imageWatermark   []byte
+	textWatermark      string
+	textWatermarkOpts  WatermarkOptions
+	imageWatermark     []byte
+	imageWatermarkName string
+	imageWatermarkOpts ImageWatermarkOptions
 	extractedImages  []ImageFile
 	imagesLoaded     bool
 }

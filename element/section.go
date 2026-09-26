@@ -1,6 +1,9 @@
 package element
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/yunkeweb/go-word/metadata"
 	"github.com/yunkeweb/go-word/style"
 )
@@ -195,15 +198,26 @@ func (h *Header) EnsureTextWatermark(text string) *TextWatermark {
 }
 
 // EnsureImageWatermark sets or updates the header's image watermark.
-func (h *Header) EnsureImageWatermark(data []byte) *Image {
+func (h *Header) EnsureImageWatermark(data []byte, name ...string) *Image {
+	fileName := "watermark.png"
+	if len(name) > 0 && name[0] != "" {
+		fileName = name[0]
+	}
 	for _, el := range h.Elements() {
 		if img, ok := el.(*Image); ok && img.IsWatermark {
 			img.Data = append([]byte(nil), data...)
 			img.Media.Data = img.Data
+			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(fileName), "."))
+			if ext == "jpg" {
+				ext = "jpeg"
+			}
+			if ext != "" {
+				img.Media.Ext = ext
+			}
 			return img
 		}
 	}
-	return h.AddWatermarkBytes("watermark.png", data, style.Image{Width: 400, Height: 400})
+	return h.AddWatermarkBytes(fileName, data, style.Image{Width: 400, Height: 400})
 }
 
 // HasDifferentEvenPage reports whether an even-page header or footer exists.

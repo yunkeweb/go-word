@@ -33,10 +33,18 @@ type Title struct {
 	BookmarkName string
 }
 
-// TextWatermark is a VML diagonal text watermark drawn in a header.
+// TextWatermark is a VML text watermark drawn in a header.
 type TextWatermark struct {
 	Base
-	Text string
+	Text     string
+	Angle    float64 // degrees; 0 means default -45
+	Color    string  // VML fillcolor (silver or #RRGGBB)
+	FontName string
+	FontSize int     // points; 0 means 1pt + fitshape
+	Opacity  float64 // 0–1; 0 means default 0.5
+	Tile     bool
+	TileRows int
+	TileCols int
 }
 
 func (t *TextWatermark) Type() string { return "TextWatermark" }

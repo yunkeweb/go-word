@@ -17,6 +17,8 @@ type Base struct {
 	TrackChange  *TrackChange
 	CommentStart *Comment
 	CommentEnd   *Comment
+	EditGroup    string // w:permStart w:edGrp (everyone, editors, …)
+	EditUser     string // w:permStart w:ed
 }
 
 func (b *Base) SetTrackChange(tc *TrackChange) { b.TrackChange = tc }
