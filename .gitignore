@@ -14,6 +14,7 @@
 *.odt
 *.rtf
 !testdata/*.docx
+/test_output_docs/
 
 # IDE / OS
 .idea/
