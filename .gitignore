@@ -27,3 +27,8 @@ GROK.md
 # Coverage
 coverage.out
 coverage.html
+
+# VitePress / Node
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
