@@ -246,6 +246,21 @@ func (c *Container) AddShape(typ string, s ...style.Shape) *Shape {
 	return sh
 }
 
+// AddDMLShape appends a DrawingML preset shape, optionally with textbox content.
+func (c *Container) AddDMLShape(prst string, width, height int, fill, line string, lineWidth int) *DMLShape {
+	sh := &DMLShape{
+		PrstGeom:  prst,
+		Width:     width,
+		Height:    height,
+		FillColor: fill,
+		LineColor: line,
+		LineWidth: lineWidth,
+	}
+	sh.Kind = "DMLShape"
+	c.add(sh)
+	return sh
+}
+
 // AddTextBox appends a text box.
 func (c *Container) AddTextBox(s ...style.TextBox) *TextBox {
 	tb := NewTextBox()
@@ -260,6 +275,18 @@ func (c *Container) AddTextBox(s ...style.TextBox) *TextBox {
 func (c *Container) AddFormula(m *math.Math) *Formula {
 	f := &Formula{Math: m}
 	c.add(f)
+	return f
+}
+
+// AddMath parses a basic LaTeX expression into a native OMML formula.
+func (c *Container) AddMath(formula string) *Formula {
+	m, err := math.ParseLaTeX(formula)
+	if err != nil || m == nil {
+		m = math.New()
+		m.Add(math.NewIdentifier(formula))
+	}
+	f := c.AddFormula(m)
+	f.Source = formula
 	return f
 }
 

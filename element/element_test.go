@@ -65,6 +65,26 @@ func TestContainerCRUDAndAdders(t *testing.T) {
 	tb.AddText("in box")
 	sec.AddTextBox(style.TextBox{Width: 1})
 	sec.AddFormula(math.New())
+	if sec.AddMath(`\frac{a}{b}`).Type() != "Formula" {
+		t.Fatal("add math")
+	}
+	sh := sec.AddDMLShape("rect", 100, 50, "5B9BD5", "2E75B6", 12700)
+	if sh.Type() != "DMLShape" {
+		t.Fatal("dml shape")
+	}
+	sh.AddText("inside")
+	sec.SetColumns(2, 720, true)
+	if sec.Style.ColsNum != 2 || !sec.Style.ColsSeparator {
+		t.Fatal("columns")
+	}
+	sec.SetColumns(0, 0, false)
+	cloned := CloneSection(sec)
+	if cloned == nil || cloned.CountElements() == 0 {
+		t.Fatal("clone section")
+	}
+	if CloneElement(nil) != nil {
+		t.Fatal("clone nil")
+	}
 	fn := sec.AddFootnote()
 	fn.AddText("fn")
 	sec.AddFootnote(style.Paragraph{})

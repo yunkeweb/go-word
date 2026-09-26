@@ -237,6 +237,13 @@ func TestWriterAllElementsAndSettings(t *testing.T) {
 	m.Add(math.NewFraction(math.NewNumeric("1"), math.NewNumeric("2")))
 	sec.AddFormula(m)
 	sec.AddFormula(nil)
+	sec.AddMath(`\frac{a}{b}`)
+	sec.SetColumns(3, 480, true)
+	doc.AddShape(ShapeRect, ShapeOptions{FillColor: "5B9BD5", LineColor: "2E75B6"})
+	doc.AddShape(ShapeRoundRect, ShapeOptions{Text: "rr", Font: style.Font{Bold: true, Size: 12, Name: "Calibri", Color: "FFFFFF"}})
+	doc.AddShape(ShapeArrow, ShapeOptions{})
+	doc.AddShape(ShapeTextBox, ShapeOptions{Text: "tb"})
+	doc.AddShape(ShapeType("ellipse"), ShapeOptions{Width: 100, Height: 50, LineWidth: 25400, FillColor: "#ABCDEF"})
 	sec.AddTOC(nil, nil, 1, 9)
 	sdt := sec.AddSDT("rich")
 	sdt.Alias = "a"
@@ -294,6 +301,12 @@ func TestWriterAllElementsAndSettings(t *testing.T) {
 	}
 	sec.AddOLEObject(olePath)
 	sec.AddOLEObject("missing.ole")
+
+	src := New()
+	src.AddSection().AddText("merged-src")
+	if err := doc.AppendDocument(src, MergeOptions{}); err != nil {
+		t.Fatal(err)
+	}
 
 	b, err := doc.Bytes()
 	if err != nil {

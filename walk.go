@@ -35,6 +35,8 @@ func childElements(el element.Element) []element.Element {
 		return v.Elements()
 	case *element.TextBox:
 		return v.Elements()
+	case *element.DMLShape:
+		return v.Elements()
 	case *element.Footnote:
 		return v.Elements()
 	case *element.Endnote:

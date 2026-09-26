@@ -77,6 +77,40 @@ func NewSuperscript(base, sup Element) *Superscript {
 	return &Superscript{Base: base, Sup: sup}
 }
 
+// Subscript is m:sSub.
+type Subscript struct {
+	elementBase
+	Base Element
+	Sub  Element
+}
+
+func NewSubscript(base, sub Element) *Subscript {
+	return &Subscript{Base: base, Sub: sub}
+}
+
+// Radical is m:rad (square root).
+type Radical struct {
+	elementBase
+	Deg  Element
+	Base Element
+}
+
+func NewRadical(base Element) *Radical {
+	return &Radical{Base: base}
+}
+
+// Delimiter is m:d (matched fences).
+type Delimiter struct {
+	elementBase
+	Beg     string
+	End     string
+	Content Element
+}
+
+func NewDelimiter(beg, end string, content Element) *Delimiter {
+	return &Delimiter{Beg: beg, End: end, Content: content}
+}
+
 // Row is a horizontal group of elements.
 type Row struct {
 	Group

@@ -66,6 +66,33 @@ func writeMathMLElement(w *common.XMLWriter, el Element) {
 			writeMathMLElement(w, v.Sup)
 		}
 		w.End()
+	case *Subscript:
+		w.Start("msub")
+		if v.Base != nil {
+			writeMathMLElement(w, v.Base)
+		}
+		if v.Sub != nil {
+			writeMathMLElement(w, v.Sub)
+		}
+		w.End()
+	case *Radical:
+		w.Start("msqrt")
+		if v.Base != nil {
+			writeMathMLElement(w, v.Base)
+		}
+		w.End()
+	case *Delimiter:
+		w.Start("mrow")
+		if v.Beg != "" {
+			w.Element("mo", v.Beg)
+		}
+		if v.Content != nil {
+			writeMathMLElement(w, v.Content)
+		}
+		if v.End != "" {
+			w.Element("mo", v.End)
+		}
+		w.End()
 	case *Identifier:
 		w.Element("mi", v.Value)
 	case *Numeric:

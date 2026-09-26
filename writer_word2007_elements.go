@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/ooxml"
 	"github.com/yunkeweb/go-word/pkg/common"
 	"github.com/yunkeweb/go-word/pkg/math"
 	"github.com/yunkeweb/go-word/style"
@@ -80,7 +81,7 @@ func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, 
 	case *element.Endnote:
 		w.writeNoteRef(xw, v, false)
 	case *element.Formula:
-		w.writeFormula(xw, v)
+		w.writeFormula(xw, v, inline)
 	case *element.TOC:
 		w.writeTOC(xw, v)
 	case *element.TextWatermark:
@@ -99,6 +100,8 @@ func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, 
 		w.writeLine(xw, v)
 	case *element.Shape:
 		w.writeShape(xw, v)
+	case *element.DMLShape:
+		w.writeDMLShape(xw, v, inline)
 	case *element.FormField:
 		w.writeFormField(xw, v)
 	case *element.Ruby:
@@ -796,15 +799,20 @@ func (w *word2007Writer) writeNoteRef(xw *common.XMLWriter, el element.Element, 
 	xw.End()
 }
 
-func (w *word2007Writer) writeFormula(xw *common.XMLWriter, f *element.Formula) {
-	xw.Start("w:p")
+func (w *word2007Writer) writeFormula(xw *common.XMLWriter, f *element.Formula, inline bool) {
+	if !inline {
+		xw.Start("w:p")
+		xw.Start("m:oMathPara")
+	}
 	if f.Math != nil {
-		b, err := math.WriteOMML(f.Math)
-		if err == nil {
+		if b, err := math.WriteOMath(f.Math); err == nil {
 			xw.Raw(string(b))
 		}
 	}
-	xw.End()
+	if !inline {
+		xw.End() // m:oMathPara
+		xw.End() // w:p
+	}
 }
 
 func (w *word2007Writer) writeTOC(xw *common.XMLWriter, toc *element.TOC) {
@@ -1055,6 +1063,90 @@ func (w *word2007Writer) writeLine(xw *common.XMLWriter, ln *element.Line) {
 	xw.End()
 	xw.End()
 	xw.End()
+}
+
+func (w *word2007Writer) writeDMLShape(xw *common.XMLWriter, sh *element.DMLShape, inline bool) {
+	if !inline {
+		xw.Start("w:p")
+	}
+	w.shapeIndex++
+	cx := sh.Width
+	cy := sh.Height
+	if cx <= 0 {
+		cx = 1828800
+	}
+	if cy <= 0 {
+		cy = 914400
+	}
+	fill := strings.TrimPrefix(sh.FillColor, "#")
+	if fill == "" {
+		fill = "5B9BD5"
+	}
+	line := strings.TrimPrefix(sh.LineColor, "#")
+	if line == "" {
+		line = "2E75B6"
+	}
+	lnW := sh.LineWidth
+	if lnW <= 0 {
+		lnW = 12700
+	}
+	prst := sh.PrstGeom
+	if prst == "" {
+		prst = "rect"
+	}
+	id := itoa(20000 + w.shapeIndex)
+	hasTx := len(sh.Elements()) > 0
+	xw.Start("w:r")
+	xw.Start("w:drawing")
+	xw.Start("wp:inline", "distT", "0", "distB", "0", "distL", "0", "distR", "0")
+	xw.Empty("wp:extent", "cx", itoa(cx), "cy", itoa(cy))
+	xw.Empty("wp:effectExtent", "l", "0", "t", "0", "r", "0", "b", "0")
+	xw.Empty("wp:docPr", "id", id, "name", "Shape "+id)
+	xw.Start("wp:cNvGraphicFramePr")
+	xw.Empty("a:graphicFrameLocks", "xmlns:a", ooxml.NSA, "noChangeAspect", "1")
+	xw.End()
+	xw.Start("a:graphic")
+	xw.Start("a:graphicData", "uri", ooxml.NSWPS)
+	xw.Start("wps:wsp")
+	txBox := "0"
+	if hasTx {
+		txBox = "1"
+	}
+	xw.Empty("wps:cNvSpPr", "txBox", txBox)
+	xw.Start("wps:spPr")
+	xw.Start("a:xfrm")
+	xw.Empty("a:off", "x", "0", "y", "0")
+	xw.Empty("a:ext", "cx", itoa(cx), "cy", itoa(cy))
+	xw.End()
+	xw.Start("a:prstGeom", "prst", prst)
+	xw.Empty("a:avLst")
+	xw.End()
+	xw.Start("a:solidFill")
+	xw.Empty("a:srgbClr", "val", fill)
+	xw.End()
+	xw.Start("a:ln", "w", itoa(lnW))
+	xw.Start("a:solidFill")
+	xw.Empty("a:srgbClr", "val", line)
+	xw.End()
+	xw.End()
+	xw.End() // spPr
+	if hasTx {
+		xw.Start("wps:txbx")
+		xw.Start("w:txbxContent")
+		w.writeContainer(xw, sh.Elements(), false)
+		xw.End()
+		xw.End()
+	}
+	xw.Empty("wps:bodyPr", "wrap", "square", "lIns", "91440", "tIns", "45720", "rIns", "91440", "bIns", "45720")
+	xw.End() // wsp
+	xw.End() // graphicData
+	xw.End() // graphic
+	xw.End() // inline
+	xw.End() // drawing
+	xw.End() // r
+	if !inline {
+		xw.End()
+	}
 }
 
 func (w *word2007Writer) writeShape(xw *common.XMLWriter, sh *element.Shape) {

@@ -32,6 +32,7 @@ type Section struct {
 	MarginBottom       int
 	ColsNum            int
 	ColsSpace          int
+	ColsSeparator      bool
 	BreakType          string // nextPage, continuous, evenPage, oddPage
 	PageNumberingStart int
 	Borders            Borders

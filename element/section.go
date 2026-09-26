@@ -221,6 +221,18 @@ func (s *Section) HasDifferentEvenPage() bool {
 	return false
 }
 
+// SetColumns sets section multi-column layout (w:cols num/space/sep).
+func (s *Section) SetColumns(num int, space int, showLine bool) {
+	if num < 1 {
+		num = 1
+	}
+	s.Style.ColsNum = num
+	if space > 0 {
+		s.Style.ColsSpace = space
+	}
+	s.Style.ColsSeparator = showLine
+}
+
 // SetOrientation sets portrait or landscape page orientation.
 func (s *Section) SetOrientation(orient string) {
 	s.Style.Orientation = orient

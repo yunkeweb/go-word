@@ -11,17 +11,33 @@ import (
 
 const ommlNS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
-// WriteOMML serializes m to Office MathML (OMML).
+// WriteOMML serializes m as a display equation (m:oMathPara / m:oMath).
 func WriteOMML(m *Math) ([]byte, error) {
 	w := common.GetXMLWriter()
 	w.Start("m:oMathPara", "xmlns:m", ommlNS)
 	w.Start("m:oMath")
-	for _, el := range m.Elements {
-		writeElement(w, el)
-	}
+	writeMathBody(w, m)
 	w.End()
 	w.End()
 	return common.FinishXML(w), nil
+}
+
+// WriteOMath serializes m as an inline m:oMath (no oMathPara wrapper).
+func WriteOMath(m *Math) ([]byte, error) {
+	w := common.GetXMLWriter()
+	w.Start("m:oMath")
+	writeMathBody(w, m)
+	w.End()
+	return common.FinishXML(w), nil
+}
+
+func writeMathBody(w *common.XMLWriter, m *Math) {
+	if m == nil {
+		return
+	}
+	for _, el := range m.Elements {
+		writeElement(w, el)
+	}
 }
 
 func writeElement(w *common.XMLWriter, el Element) {
@@ -56,6 +72,48 @@ func writeElement(w *common.XMLWriter, el Element) {
 		}
 		w.End()
 		w.End()
+	case *Subscript:
+		w.Start("m:sSub")
+		w.Start("m:e")
+		if v.Base != nil {
+			writeElement(w, v.Base)
+		}
+		w.End()
+		w.Start("m:sub")
+		if v.Sub != nil {
+			writeElement(w, v.Sub)
+		}
+		w.End()
+		w.End()
+	case *Radical:
+		w.Start("m:rad")
+		w.Start("m:radPr")
+		w.Empty("m:degHide", "m:val", "1")
+		w.End()
+		w.Start("m:deg")
+		w.End()
+		w.Start("m:e")
+		if v.Base != nil {
+			writeElement(w, v.Base)
+		}
+		w.End()
+		w.End()
+	case *Delimiter:
+		w.Start("m:d")
+		w.Start("m:dPr")
+		if v.Beg != "" {
+			w.Empty("m:begChr", "m:val", v.Beg)
+		}
+		if v.End != "" {
+			w.Empty("m:endChr", "m:val", v.End)
+		}
+		w.End()
+		w.Start("m:e")
+		if v.Content != nil {
+			writeElement(w, v.Content)
+		}
+		w.End()
+		w.End()
 	case *Identifier:
 		writeRun(w, v.Value)
 	case *Numeric:
@@ -75,7 +133,7 @@ func writeElement(w *common.XMLWriter, el Element) {
 
 func writeRun(w *common.XMLWriter, text string) {
 	w.Start("m:r")
-	w.Start("m:t")
+	w.Start("m:t", "xml:space", "preserve")
 	w.Text(text)
 	w.End()
 	w.End()
@@ -111,6 +169,20 @@ func ReadOMML(r io.Reader) (*Math, error) {
 			} else if g.Sup == nil {
 				g.Sup = el
 			}
+		case *Subscript:
+			if g.Base == nil {
+				g.Base = el
+			} else if g.Sub == nil {
+				g.Sub = el
+			}
+		case *Radical:
+			if g.Base == nil {
+				g.Base = el
+			}
+		case *Delimiter:
+			if g.Content == nil {
+				g.Content = el
+			}
 		}
 		stack = append(stack, el)
 	}
@@ -135,6 +207,12 @@ func ReadOMML(r io.Reader) (*Math, error) {
 				push(NewFraction(nil, nil))
 			case "sSup":
 				push(NewSuperscript(nil, nil))
+			case "sSub":
+				push(NewSubscript(nil, nil))
+			case "rad":
+				push(NewRadical(nil))
+			case "d":
+				push(NewDelimiter("", "", nil))
 			case "r":
 				// wait for t
 			case "t":
@@ -155,7 +233,7 @@ func ReadOMML(r io.Reader) (*Math, error) {
 						stack = stack[:len(stack)-1]
 					}
 				}
-			case "num", "den", "e", "sup":
+			case "num", "den", "e", "sup", "sub", "deg", "dPr", "radPr", "fPr":
 				// structural, ignore
 			default:
 				// skip unknown
@@ -166,7 +244,7 @@ func ReadOMML(r io.Reader) (*Math, error) {
 				local = local[i+1:]
 			}
 			switch local {
-			case "f", "sSup":
+			case "f", "sSup", "sSub", "rad", "d":
 				if len(stack) > 0 {
 					stack = stack[:len(stack)-1]
 				}

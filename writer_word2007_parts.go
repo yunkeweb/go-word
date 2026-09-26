@@ -160,6 +160,8 @@ func (w *word2007Writer) writeDocumentStart(xw *common.XMLWriter) {
 		"xmlns:a", ooxml.NSA,
 		"xmlns:c", ooxml.NSC,
 		"xmlns:pic", ooxml.NSPic,
+		"xmlns:wps", ooxml.NSWPS,
+		"mc:Ignorable", "wps",
 	)
 	xw.Start("w:body")
 }
@@ -246,7 +248,15 @@ func (w *word2007Writer) writeSectPr(xw *common.XMLWriter, sec *element.Section)
 	if cols < 1 {
 		cols = 1
 	}
-	xw.Empty("w:cols", "w:space", itoa(st.ColsSpace), "w:num", itoa(cols))
+	space := st.ColsSpace
+	if space == 0 {
+		space = style.DefaultColumnSpacing
+	}
+	colAttrs := []string{"w:num", itoa(cols), "w:space", itoa(space)}
+	if st.ColsSeparator {
+		colAttrs = append(colAttrs, "w:sep", "1")
+	}
+	xw.Empty("w:cols", colAttrs...)
 	if sec.HasDifferentFirstPage() {
 		xw.Empty("w:titlePg")
 	}

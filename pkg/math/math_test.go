@@ -6,6 +6,101 @@ import (
 	"testing"
 )
 
+func TestParseLaTeXFractionAndPythagoras(t *testing.T) {
+	frac, err := ParseLaTeX(`\frac{a}{b}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := WriteOMML(frac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, need := range []string{"m:oMathPara", "m:oMath", "m:f", "m:num", "m:den", ">a<", ">b<"} {
+		if !strings.Contains(s, need) {
+			t.Fatalf("frac missing %q in %s", need, s)
+		}
+	}
+
+	py, err := ParseLaTeX(`x^{2} + y^{2} = z^{2}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ob, err := WriteOMML(py)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os := string(ob)
+	if strings.Count(os, "<m:sSup>") != 3 {
+		t.Fatalf("want 3 superscripts, xml=%s", os)
+	}
+	for _, need := range []string{">x<", ">y<", ">z<", ">2<", "m:oMathPara"} {
+		if !strings.Contains(os, need) {
+			t.Fatalf("pythagoras missing %q in %s", need, os)
+		}
+	}
+	inline, err := WriteOMath(py)
+	if err != nil {
+		t.Fatal(err)
+	}
+	is := string(inline)
+	if !strings.Contains(is, "<m:oMath>") || strings.Contains(is, "oMathPara") {
+		t.Fatalf("inline wrap: %s", is)
+	}
+}
+
+func TestParseLaTeXDelimsEmptyAndUnknown(t *testing.T) {
+	m, err := ParseLaTeX(`\left( x+1 \right)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := WriteOMML(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "<m:d>") || !strings.Contains(s, `m:begChr`) {
+		t.Fatalf("delimiter: %s", s)
+	}
+	empty, err := ParseLaTeX("")
+	if err != nil || empty == nil {
+		t.Fatal("empty latex")
+	}
+	unk, err := ParseLaTeX(`\foo{x}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ub, _ := WriteOMML(unk)
+	if !strings.Contains(string(ub), "foo") && !strings.Contains(string(ub), ">x<") {
+		t.Fatalf("unknown cmd: %s", ub)
+	}
+	paren, err := ParseLaTeX(`(a+b)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, _ := WriteOMML(paren)
+	if !strings.Contains(string(pb), "<m:d>") {
+		t.Fatalf("paren: %s", pb)
+	}
+}
+
+func TestParseLaTeXSqrtSubAndSymbols(t *testing.T) {
+	m, err := ParseLaTeX(`\sqrt{x_1} + \pi`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := WriteOMML(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, need := range []string{"m:rad", "m:sSub", ">π<"} {
+		if !strings.Contains(s, need) {
+			t.Fatalf("missing %q in %s", need, s)
+		}
+	}
+}
+
 func TestConstructorsAndGroup(t *testing.T) {
 	m := New()
 	id := NewIdentifier("x")
@@ -53,6 +148,9 @@ func TestWriteMathMLAllElements(t *testing.T) {
 	m.Add(NewFraction(nil, NewNumeric("2")))
 	m.Add(NewSuperscript(NewIdentifier("x"), nil))
 	m.Add(NewSuperscript(nil, NewNumeric("2")))
+	m.Add(NewSubscript(NewIdentifier("x"), NewNumeric("1")))
+	m.Add(NewRadical(NewIdentifier("x")))
+	m.Add(NewDelimiter("(", ")", NewIdentifier("y")))
 	inner := New()
 	inner.Add(NewIdentifier("y"))
 	m.Add(inner)
@@ -68,7 +166,7 @@ func TestWriteMathMLAllElements(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, need := range []string{"<math", "mrow", "mi", "mo", "mn", "mfrac", "msup", "semantics", "annotation"} {
+	for _, need := range []string{"<math", "mrow", "mi", "mo", "mn", "mfrac", "msup", "msub", "msqrt", "semantics", "annotation"} {
 		if !strings.Contains(s, need) {
 			t.Fatalf("missing %q in %s", need, s)
 		}
@@ -112,6 +210,9 @@ func TestWriteReadOMMLVariants(t *testing.T) {
 	m.Add(NewFraction(nil, nil))
 	m.Add(NewSuperscript(NewIdentifier("x"), NewNumeric("2")))
 	m.Add(NewSuperscript(nil, nil))
+	m.Add(NewSubscript(NewIdentifier("x"), NewNumeric("1")))
+	m.Add(NewRadical(NewIdentifier("z")))
+	m.Add(NewDelimiter("(", ")", NewIdentifier("w")))
 	m.Add(NewOperator("+"))
 	sem := NewSemantics()
 	sem.Add(NewIdentifier("s"))
@@ -132,6 +233,9 @@ func TestWriteReadOMMLVariants(t *testing.T) {
 		<m:oMath>
 			<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>
 			<m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup>
+			<m:sSub><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sub><m:r><m:t>1</m:t></m:r></m:sub></m:sSub>
+			<m:rad><m:deg/><m:e><m:r><m:t>z</m:t></m:r></m:e></m:rad>
+			<m:d><m:dPr><m:begChr m:val="("/><m:endChr m:val=")"/></m:dPr><m:e><m:r><m:t>w</m:t></m:r></m:e></m:d>
 			<m:r><m:t>abc</m:t></m:r>
 			<m:r><m:t>-3.5</m:t></m:r>
 			<m:unknown/>

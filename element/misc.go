@@ -159,10 +159,24 @@ func NewTextBox() *TextBox {
 	return tb
 }
 
+// DMLShape is a DrawingML wordprocessing shape (wps:wsp).
+type DMLShape struct {
+	Container
+	PrstGeom  string
+	Width     int
+	Height    int
+	FillColor string
+	LineColor string
+	LineWidth int
+}
+
+func (s *DMLShape) Type() string { return "DMLShape" }
+
 // Formula is an OMML equation.
 type Formula struct {
 	Base
-	Math *math.Math
+	Math   *math.Math
+	Source string
 }
 
 func (f *Formula) Type() string { return "Formula" }
