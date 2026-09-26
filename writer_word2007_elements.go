@@ -418,23 +418,7 @@ func (w *word2007Writer) writeTable(xw *common.XMLWriter, tbl *element.Table) {
 	xw.End()
 	for _, row := range tbl.Rows {
 		xw.Start("w:tr")
-		if row.Style.Height > 0 || row.Style.Header || row.Style.CantSplit {
-			xw.Start("w:trPr")
-			if row.Style.Height > 0 {
-				rule := row.Style.Rule
-				if rule == "" {
-					rule = "atLeast"
-				}
-				xw.Empty("w:trHeight", "w:val", itoa(row.Style.Height), "w:hRule", rule)
-			}
-			if row.Style.Header {
-				xw.Empty("w:tblHeader")
-			}
-			if row.Style.CantSplit {
-				xw.Empty("w:cantSplit")
-			}
-			xw.End()
-		}
+		w.writeTrPr(xw, row)
 		for _, cell := range row.Cells {
 			xw.Start("w:tc")
 			w.writeTcPr(xw, cell)
@@ -548,6 +532,33 @@ func (w *word2007Writer) writeTblPr(xw *common.XMLWriter, st style.Table) {
 			xw.Empty("w:right", "w:w", itoa(st.CellMarginRight), "w:type", "dxa")
 		}
 		xw.End()
+	}
+	xw.End()
+}
+
+func rowIsHeader(r *element.Row) bool {
+	return r.Style.Header || r.Style.TblHeader
+}
+
+func (w *word2007Writer) writeTrPr(xw *common.XMLWriter, row *element.Row) {
+	// CT_TrPrBase listed order: cantSplit, trHeight, tblHeader.
+	header := rowIsHeader(row)
+	if row.Style.Height <= 0 && !header && !row.Style.CantSplit {
+		return
+	}
+	xw.Start("w:trPr")
+	if row.Style.CantSplit {
+		xw.Empty("w:cantSplit")
+	}
+	if row.Style.Height > 0 {
+		rule := row.Style.Rule
+		if rule == "" {
+			rule = "atLeast"
+		}
+		xw.Empty("w:trHeight", "w:val", itoa(row.Style.Height), "w:hRule", rule)
+	}
+	if header {
+		xw.Empty("w:tblHeader")
 	}
 	xw.End()
 }

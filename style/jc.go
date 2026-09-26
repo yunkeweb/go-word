@@ -36,9 +36,12 @@ const (
 
 // Text direction (ST_TextDirection).
 const (
-	TextDirectionLrTb = "lrTb" // horizontal
-	TextDirectionTbRl = "tbRl" // vertical, top-to-bottom right-to-left
-	TextDirectionBtLr = "btLr" // vertical, bottom-to-top left-to-right
+	TextDirectionLrTb  = "lrTb"  // horizontal
+	TextDirectionTbRl  = "tbRl"  // vertical, top-to-bottom right-to-left
+	TextDirectionBtLr  = "btLr"  // vertical, bottom-to-top left-to-right
+	TextDirectionLrTbV = "lrTbV" // vertical rotated
+	TextDirectionTbRlV = "tbRlV"
+	TextDirectionTbLrV = "tbLrV"
 )
 
 // Line spacing rule.

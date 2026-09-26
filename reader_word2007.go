@@ -300,6 +300,25 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 						c.Style.TextDir = v
 					}
 				}
+			case "tblHeader":
+				if n := len(frames); n > 0 && frames[n-1].row != nil && onOffTrue(t) {
+					frames[n-1].row.Style.Header = true
+					frames[n-1].row.Style.TblHeader = true
+				}
+			case "cantSplit":
+				if n := len(frames); n > 0 && frames[n-1].row != nil && onOffTrue(t) {
+					frames[n-1].row.Style.CantSplit = true
+				}
+			case "trHeight":
+				if n := len(frames); n > 0 && frames[n-1].row != nil {
+					row := frames[n-1].row
+					if h := atoi(attr(t, "val")); h > 0 {
+						row.Style.Height = h
+					}
+					if rule := attr(t, "hRule"); rule != "" {
+						row.Style.Rule = rule
+					}
+				}
 			case "t":
 				var s string
 				if err := dec.DecodeElement(&s, &t); err != nil {
@@ -478,6 +497,11 @@ func attr(t xml.StartElement, name string) string {
 		}
 	}
 	return ""
+}
+
+func onOffTrue(t xml.StartElement) bool {
+	v := strings.ToLower(attr(t, "val"))
+	return v != "0" && v != "false" && v != "off"
 }
 
 func skip(dec *xml.Decoder, start xml.StartElement) error {

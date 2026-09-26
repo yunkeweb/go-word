@@ -98,6 +98,15 @@ func (t *Table) AddCell(width int, st ...any) *Cell {
 	return t.Rows[len(t.Rows)-1].AddCell(width, st...)
 }
 
+// SetHeaderRow marks row as a repeating header (w:tblHeader).
+// Word repeats consecutive header rows at the start of the table on each page.
+func (t *Table) SetHeaderRow(row *Row) *Table {
+	if row != nil {
+		row.SetHeader(true)
+	}
+	return t
+}
+
 // Row is a table row.
 type Row struct {
 	Base
@@ -120,6 +129,25 @@ func (r *Row) AddCell(width int, st ...any) *Cell {
 	r.Cells = append(r.Cells, c)
 	return c
 }
+
+// SetHeader toggles repeating this row at the top of each page (w:tblHeader).
+func (r *Row) SetHeader(v bool) *Row {
+	r.Style.Header = v
+	r.Style.TblHeader = v
+	return r
+}
+
+// SetCantSplit toggles keeping the row on one page (w:cantSplit).
+func (r *Row) SetCantSplit(v bool) *Row {
+	r.Style.CantSplit = v
+	return r
+}
+
+// IsHeader reports whether the row is a repeating table header.
+func (r *Row) IsHeader() bool { return r.Style.Header || r.Style.TblHeader }
+
+// IsCantSplit reports whether the row is marked w:cantSplit.
+func (r *Row) IsCantSplit() bool { return r.Style.CantSplit }
 
 // Cell is a table cell and a container.
 type Cell struct {
@@ -184,7 +212,50 @@ func (c *Cell) SetPadding(top, left, bottom, right int) {
 }
 
 // SetVerticalAlignment sets w:vAlign (top, center, bottom).
-func (c *Cell) SetVerticalAlignment(v string) { c.Style.VAlign = v }
+func (c *Cell) SetVerticalAlignment(v string) { c.SetVAlign(v) }
 
-// SetTextDirection sets w:textDirection (lrTb, tbRl, btLr).
-func (c *Cell) SetTextDirection(v string) { c.Style.TextDir = v }
+// SetVAlign sets w:vAlign (top, center, bottom) and returns the cell.
+func (c *Cell) SetVAlign(v string) *Cell {
+	c.Style.VAlign = normalizeVAlign(v)
+	return c
+}
+
+// SetTextDirection sets w:textDirection (lrTb, tbRl, btLr, …) and returns the cell.
+func (c *Cell) SetTextDirection(v string) *Cell {
+	c.Style.TextDir = normalizeTextDirection(v)
+	return c
+}
+
+func normalizeVAlign(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "top":
+		return style.VAlignTop
+	case "center", "centre", "middle":
+		return style.VAlignCenter
+	case "bottom":
+		return style.VAlignBottom
+	case "both", "justify":
+		return style.VAlignBoth
+	default:
+		return v
+	}
+}
+
+func normalizeTextDirection(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "lrtb", "horizontal":
+		return style.TextDirectionLrTb
+	case "tbrl", "vertical":
+		return style.TextDirectionTbRl
+	case "btlr":
+		return style.TextDirectionBtLr
+	case "lrtbv":
+		return style.TextDirectionLrTbV
+	case "tbrlv":
+		return style.TextDirectionTbRlV
+	case "tblrv":
+		return style.TextDirectionTbLrV
+	default:
+		return v
+	}
+}
