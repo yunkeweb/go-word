@@ -26,11 +26,20 @@ func (b *Bookmark) Type() string { return "Bookmark" }
 // Title is a heading paragraph.
 type Title struct {
 	Base
-	Text  string
-	Depth int
-	Page  int
-	Run   *TextRun
+	Text         string
+	Depth        int
+	Page         int
+	Run          *TextRun
+	BookmarkName string
 }
+
+// TextWatermark is a VML diagonal text watermark drawn in a header.
+type TextWatermark struct {
+	Base
+	Text string
+}
+
+func (t *TextWatermark) Type() string { return "TextWatermark" }
 
 func (t *Title) Type() string { return "Title" }
 

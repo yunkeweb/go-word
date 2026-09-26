@@ -27,6 +27,8 @@ type Document struct {
 	comments         []*element.Comment
 	titles           []*element.Title
 	charts           []*element.Chart
+	textWatermark    string
+	imageWatermark   []byte
 }
 
 // PhpWord is an alias for Document, matching the PHP class name.

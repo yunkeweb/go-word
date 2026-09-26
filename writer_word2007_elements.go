@@ -1,6 +1,7 @@
 package word
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -82,6 +83,14 @@ func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, 
 		w.writeFormula(xw, v)
 	case *element.TOC:
 		w.writeTOC(xw, v)
+	case *element.TextWatermark:
+		if !inline {
+			xw.Start("w:p")
+		}
+		w.writeTextWatermark(xw, v)
+		if !inline {
+			xw.End()
+		}
 	case *element.SDT:
 		w.writeSDT(xw, v)
 	case *element.TextBox:
@@ -268,11 +277,24 @@ func (w *word2007Writer) writeTitle(xw *common.XMLWriter, t *element.Title) {
 	xw.Start("w:p")
 	xw.Start("w:pPr")
 	xw.Empty("w:pStyle", "w:val", headingStyleName(t.Depth))
-	xw.Empty("w:outlineLvl", "w:val", itoa(t.Depth-1))
+	lvl := t.Depth - 1
+	if lvl < 0 {
+		lvl = 0
+	}
+	xw.Empty("w:outlineLvl", "w:val", itoa(lvl))
 	xw.End()
+	bkID := ""
+	if t.BookmarkName != "" {
+		w.bkIndex++
+		bkID = itoa(w.bkIndex)
+		xw.Empty("w:bookmarkStart", "w:id", bkID, "w:name", t.BookmarkName)
+	}
 	xw.Start("w:r")
 	xw.WT(t.Text)
 	xw.End()
+	if bkID != "" {
+		xw.Empty("w:bookmarkEnd", "w:id", bkID)
+	}
 	xw.End()
 }
 
@@ -572,6 +594,10 @@ func (w *word2007Writer) writeTcPr(xw *common.XMLWriter, c *element.Cell) {
 }
 
 func (w *word2007Writer) writeImage(xw *common.XMLWriter, img *element.Image) {
+	if img.IsWatermark {
+		w.writeImageWatermark(xw, img)
+		return
+	}
 	rid := w.relFor(img)
 	if rid == "" {
 		return
@@ -686,15 +712,23 @@ func (w *word2007Writer) writeField(xw *common.XMLWriter, f *element.Field) {
 	for _, o := range f.Options {
 		instr += " " + o
 	}
-	if f.Text != "" {
-		instr += " " + f.Text
+	result := f.Text
+	if result == "" {
+		switch strings.ToUpper(f.FieldType) {
+		case "PAGE", "NUMPAGES", "":
+			result = "1"
+		}
 	}
 	xw.Start("w:p")
-	writeFieldRun(xw, instr)
+	writeFieldRunWithResult(xw, instr, result)
 	xw.End()
 }
 
 func writeFieldRun(xw *common.XMLWriter, instr string) {
+	writeFieldRunWithResult(xw, instr, "")
+}
+
+func writeFieldRunWithResult(xw *common.XMLWriter, instr, result string) {
 	xw.Start("w:r")
 	xw.Empty("w:fldChar", "w:fldCharType", "begin")
 	xw.End()
@@ -703,6 +737,14 @@ func writeFieldRun(xw *common.XMLWriter, instr string) {
 	xw.Text(" " + instr + " ")
 	xw.End()
 	xw.End()
+	xw.Start("w:r")
+	xw.Empty("w:fldChar", "w:fldCharType", "separate")
+	xw.End()
+	if result != "" {
+		xw.Start("w:r")
+		xw.WT(result)
+		xw.End()
+	}
 	xw.Start("w:r")
 	xw.Empty("w:fldChar", "w:fldCharType", "end")
 	xw.End()
@@ -749,10 +791,198 @@ func (w *word2007Writer) writeFormula(xw *common.XMLWriter, f *element.Formula) 
 }
 
 func (w *word2007Writer) writeTOC(xw *common.XMLWriter, toc *element.TOC) {
-	_ = toc
+	min, max := toc.MinDepth, toc.MaxDepth
+	if min < 1 {
+		min = 1
+	}
+	if max < min {
+		max = 3
+	}
+	instr := fmt.Sprintf(`TOC \o "%d-%d" \h \z \u`, min, max)
+	tabPos := 9062
+	leader := "dot"
+	if ts, ok := toc.TOCStyle.(style.TOC); ok {
+		if ts.TabPos > 0 {
+			tabPos = ts.TabPos
+		}
+		if ts.TabLeader != "" {
+			leader = ts.TabLeader
+		}
+	}
+
 	xw.Start("w:p")
-	writeFieldRun(xw, `TOC \o "1-9" \h \z \u`)
+	xw.Start("w:fldSimple", "w:instr", " "+instr+" ")
+	xw.Start("w:r")
+	xw.Start("w:rPr")
+	xw.Empty("w:noProof")
 	xw.End()
+	xw.WT("Table of Contents")
+	xw.End()
+	xw.End()
+	xw.End()
+
+	xw.Start("w:p")
+	xw.Start("w:r")
+	xw.Empty("w:fldChar", "w:fldCharType", "begin")
+	xw.End()
+	xw.Start("w:r")
+	xw.Start("w:instrText", "xml:space", "preserve")
+	xw.Text(" " + instr + " ")
+	xw.End()
+	xw.End()
+	xw.Start("w:r")
+	xw.Empty("w:fldChar", "w:fldCharType", "separate")
+	xw.End()
+	xw.End()
+
+	for _, t := range w.doc.titles {
+		if t.Depth < min || t.Depth > max {
+			continue
+		}
+		w.writeTOCEntry(xw, t, tabPos, leader)
+	}
+
+	xw.Start("w:p")
+	xw.Start("w:r")
+	xw.Empty("w:fldChar", "w:fldCharType", "end")
+	xw.End()
+	xw.End()
+}
+
+func (w *word2007Writer) writeTOCEntry(xw *common.XMLWriter, t *element.Title, tabPos int, leader string) {
+	anchor := t.BookmarkName
+	if anchor == "" {
+		anchor = "_Toc" + itoa(t.Depth)
+	}
+	xw.Start("w:p")
+	xw.Start("w:pPr")
+	xw.Empty("w:pStyle", "w:val", "TOC"+itoa(t.Depth))
+	xw.Start("w:tabs")
+	xw.Empty("w:tab", "w:val", "right", "w:leader", leader, "w:pos", itoa(tabPos))
+	xw.End()
+	if t.Depth > 1 {
+		xw.Empty("w:ind", "w:left", itoa(200*(t.Depth-1)))
+	}
+	xw.End()
+	xw.Start("w:hyperlink", "w:anchor", anchor, "w:history", "1")
+	xw.Start("w:r")
+	xw.WT(t.Text)
+	xw.End()
+	xw.Start("w:r")
+	xw.Empty("w:tab")
+	xw.End()
+	writeFieldRunWithResult(xw, "PAGEREF "+anchor+" \\h", "1")
+	xw.End()
+	xw.End()
+}
+
+func (w *word2007Writer) writeTextWatermark(xw *common.XMLWriter, tw *element.TextWatermark) {
+	text := tw.Text
+	if text == "" {
+		text = "WATERMARK"
+	}
+	xw.Start("w:r")
+	xw.Start("w:rPr")
+	xw.Empty("w:noProof")
+	xw.End()
+	xw.Start("w:pict")
+	xw.Start("v:shapetype",
+		"id", "_x0000_t136",
+		"coordsize", "21600,21600",
+		"o:spt", "136",
+		"adj", "10800",
+		"path", "m@7,l@8,m@5,21600l@6,21600e",
+	)
+	xw.Start("v:formulas")
+	for _, eqn := range []string{
+		"sum #0 0 10800",
+		"prod #0 2 1",
+		"sum 21600 0 @1",
+		"sum 0 0 @2",
+		"sum 21600 0 @3",
+		"if @0 @3 0",
+		"if @0 @4 21600",
+		"if @0 0 @3",
+		"if @0 21600 @4",
+		"mid @5 @6",
+		"mid @8 @5",
+		"mid @7 @8",
+		"mid @6 @7",
+		"sum @6 0 @5",
+	} {
+		xw.Empty("v:f", "eqn", eqn)
+	}
+	xw.End()
+	xw.Empty("v:path", "textpathok", "t", "o:connecttype", "custom",
+		"o:connectlocs", "@9,0;@10,10800;@11,21600;@12,10800",
+		"o:connectangles", "270,180,90,0")
+	xw.Empty("v:textpath", "on", "t", "fitshape", "t")
+	xw.Start("v:handles")
+	xw.Empty("v:h", "position", "#0,bottomRight", "polar", "0,10800")
+	xw.End()
+	xw.Empty("o:lock", "v:ext", "edit", "text", "t", "shapetype", "t")
+	xw.End() // shapetype
+	xw.Start("v:shape",
+		"id", "PowerPlusWaterMarkObject",
+		"o:spid", "_x0000_s2049",
+		"type", "#_x0000_t136",
+		"style", "position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;rotation:315;z-index:-251658752;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin",
+		"o:allowincell", "f",
+		"fillcolor", "silver",
+		"stroked", "f",
+	)
+	xw.Empty("v:fill", "opacity", ".5")
+	xw.Empty("v:textpath", "style", `font-family:"Calibri";font-size:1pt`, "on", "t", "string", text)
+	xw.Empty("w10:wrap", "anchorx", "margin", "anchory", "margin")
+	xw.End() // shape
+	xw.End() // pict
+	xw.End() // r
+}
+
+func (w *word2007Writer) writeImageWatermark(xw *common.XMLWriter, img *element.Image) {
+	rid := w.relFor(img)
+	if rid == "" {
+		return
+	}
+	wpt, hpt := watermarkPointSize(img)
+	styleAttr := fmt.Sprintf("position:absolute;margin-left:0;margin-top:0;width:%gpt;height:%gpt;z-index:-251658752;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin", wpt, hpt)
+	xw.Start("w:r")
+	xw.Start("w:pict")
+	xw.Start("v:shape",
+		"id", "WordPictureWatermark",
+		"o:spid", "_x0000_s2050",
+		"type", "#_x0000_t75",
+		"style", styleAttr,
+		"o:allowincell", "f",
+		"filled", "f",
+		"stroked", "f",
+	)
+	xw.Empty("v:imagedata", "r:id", rid, "o:title", "watermark")
+	xw.Empty("w10:wrap", "anchorx", "margin", "anchory", "margin")
+	xw.End()
+	xw.End()
+	xw.End()
+}
+
+func watermarkPointSize(img *element.Image) (float64, float64) {
+	wpt, hpt := 240.0, 240.0
+	if img.Style.WidthEMU > 0 {
+		wpt = float64(img.Style.WidthEMU) / 12700.0
+	} else if img.Style.Width > 0 {
+		wpt = img.Style.Width * 72.0 / 96.0
+	}
+	if img.Style.HeightEMU > 0 {
+		hpt = float64(img.Style.HeightEMU) / 12700.0
+	} else if img.Style.Height > 0 {
+		hpt = img.Style.Height * 72.0 / 96.0
+	}
+	if wpt < 36 {
+		wpt = 120
+	}
+	if hpt < 36 {
+		hpt = 120
+	}
+	return wpt, hpt
 }
 
 func (w *word2007Writer) writeSDT(xw *common.XMLWriter, s *element.SDT) {

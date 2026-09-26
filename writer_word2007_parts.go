@@ -1,6 +1,7 @@
 package word
 
 import (
+	"encoding/base64"
 	"strconv"
 	"time"
 
@@ -208,13 +209,26 @@ func (w *word2007Writer) writeSectPr(xw *common.XMLWriter, sec *element.Section)
 		}
 	}
 	st := sec.Style
+	// CT_SectPr: headerReference, footerReference, type, pgSz, pgMar, pgNumType, cols, titlePg, docGrid
+	if st.BreakType != "" {
+		xw.Empty("w:type", "w:val", st.BreakType)
+	}
 	orient := st.Orientation
-	wAttr := itoa(st.PageSizeW)
-	hAttr := itoa(st.PageSizeH)
+	wTwip := st.PageSizeW
+	hTwip := st.PageSizeH
+	if wTwip == 0 {
+		wTwip = style.DefaultPageWidth
+	}
+	if hTwip == 0 {
+		hTwip = style.DefaultPageHeight
+	}
+	if orient == style.OrientationLandscape && wTwip < hTwip {
+		wTwip, hTwip = hTwip, wTwip
+	}
 	if orient == style.OrientationLandscape {
-		xw.Empty("w:pgSz", "w:w", wAttr, "w:h", hAttr, "w:orient", "landscape")
+		xw.Empty("w:pgSz", "w:w", itoa(wTwip), "w:h", itoa(hTwip), "w:orient", "landscape")
 	} else {
-		xw.Empty("w:pgSz", "w:w", wAttr, "w:h", hAttr)
+		xw.Empty("w:pgSz", "w:w", itoa(wTwip), "w:h", itoa(hTwip))
 	}
 	xw.Empty("w:pgMar",
 		"w:top", itoa(st.MarginTop),
@@ -225,16 +239,16 @@ func (w *word2007Writer) writeSectPr(xw *common.XMLWriter, sec *element.Section)
 		"w:footer", itoa(st.FooterHeight),
 		"w:gutter", itoa(st.Gutter),
 	)
+	if st.PageNumberingStart > 0 {
+		xw.Empty("w:pgNumType", "w:start", itoa(st.PageNumberingStart))
+	}
 	cols := st.ColsNum
 	if cols < 1 {
 		cols = 1
 	}
 	xw.Empty("w:cols", "w:space", itoa(st.ColsSpace), "w:num", itoa(cols))
-	if st.PageNumberingStart > 0 {
-		xw.Empty("w:pgNumType", "w:start", itoa(st.PageNumberingStart))
-	}
-	if st.BreakType != "" {
-		xw.Empty("w:type", "w:val", st.BreakType)
+	if sec.HasDifferentFirstPage() {
+		xw.Empty("w:titlePg")
 	}
 	xw.Empty("w:docGrid", "w:linePitch", "360")
 	xw.End()
@@ -255,6 +269,8 @@ func (w *word2007Writer) writeHdrFtr(xw *common.XMLWriter, tag string, el elemen
 		"xmlns:a", ooxml.NSA,
 		"xmlns:pic", ooxml.NSPic,
 		"xmlns:v", ooxml.NSV,
+		"xmlns:o", ooxml.NSO,
+		"xmlns:w10", ooxml.NSW10,
 	)
 	var kids []element.Element
 	switch v := el.(type) {
@@ -431,7 +447,29 @@ func (w *word2007Writer) writeSettingsXML(xw *common.XMLWriter) {
 	if p := s.DocumentProtection; p != nil && p.Editing != "" {
 		attrs := []string{"w:edit", p.Editing, "w:enforcement", "1"}
 		if p.Hash != "" {
-			attrs = append(attrs, "w:hash", p.Hash)
+			alg := p.Algorithm
+			if alg == "" {
+				alg = common.AlgorithmSHA1
+			}
+			sid := common.AlgorithmID(alg)
+			if sid == 0 {
+				sid = 4
+			}
+			spin := p.SpinCount
+			if spin <= 0 {
+				spin = 100000
+			}
+			attrs = append(attrs,
+				"w:cryptProviderType", "rsaFull",
+				"w:cryptAlgorithmClass", "hash",
+				"w:cryptAlgorithmType", "typeAny",
+				"w:cryptAlgorithmSid", itoa(sid),
+				"w:cryptSpinCount", itoa(spin),
+				"w:hash", p.Hash,
+			)
+			if len(p.Salt) > 0 {
+				attrs = append(attrs, "w:salt", base64.StdEncoding.EncodeToString(p.Salt))
+			}
 		}
 		xw.Empty("w:documentProtection", attrs...)
 	}

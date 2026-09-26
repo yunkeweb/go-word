@@ -166,3 +166,69 @@ func (h *Header) AddWatermark(src string, st ...any) *Image {
 	img.Style.WrappingStyle = style.WrappingBehind
 	return img
 }
+
+// AddWatermarkBytes appends an in-memory image watermark to a header.
+func (h *Header) AddWatermarkBytes(name string, data []byte, st ...any) *Image {
+	img := h.AddImageBytes(name, data, st...)
+	img.IsWatermark = true
+	img.Style.IsWatermark = true
+	img.Style.WrappingStyle = style.WrappingBehind
+	return img
+}
+
+// AddTextWatermark appends a VML text watermark to a header.
+func (h *Header) AddTextWatermark(text string) *TextWatermark {
+	tw := &TextWatermark{Text: text}
+	h.add(tw)
+	return tw
+}
+
+// EnsureTextWatermark sets or updates the header's text watermark.
+func (h *Header) EnsureTextWatermark(text string) *TextWatermark {
+	for _, el := range h.Elements() {
+		if tw, ok := el.(*TextWatermark); ok {
+			tw.Text = text
+			return tw
+		}
+	}
+	return h.AddTextWatermark(text)
+}
+
+// EnsureImageWatermark sets or updates the header's image watermark.
+func (h *Header) EnsureImageWatermark(data []byte) *Image {
+	for _, el := range h.Elements() {
+		if img, ok := el.(*Image); ok && img.IsWatermark {
+			img.Data = append([]byte(nil), data...)
+			img.Media.Data = img.Data
+			return img
+		}
+	}
+	return h.AddWatermarkBytes("watermark.png", data, style.Image{Width: 400, Height: 400})
+}
+
+// HasDifferentEvenPage reports whether an even-page header or footer exists.
+func (s *Section) HasDifferentEvenPage() bool {
+	for _, h := range s.Headers {
+		if h.HeaderType == HeaderEven {
+			return true
+		}
+	}
+	for _, f := range s.Footers {
+		if f.HeaderType == HeaderEven {
+			return true
+		}
+	}
+	return false
+}
+
+// SetOrientation sets portrait or landscape page orientation.
+func (s *Section) SetOrientation(orient string) {
+	s.Style.Orientation = orient
+}
+
+// SetDifferentFirstPage adds a first-page header when enable is true.
+func (s *Section) SetDifferentFirstPage(enable bool) {
+	if enable && !s.HasDifferentFirstPage() {
+		s.AddHeader(HeaderFirst)
+	}
+}

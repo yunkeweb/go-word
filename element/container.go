@@ -216,6 +216,16 @@ func (c *Container) AddField(typ string, properties map[string]string, options [
 	return f
 }
 
+// AddPageNumber inserts a PAGE field.
+func (c *Container) AddPageNumber() *Field {
+	return c.AddField("PAGE", nil, nil, "")
+}
+
+// AddNumPages inserts a NUMPAGES field.
+func (c *Container) AddNumPages() *Field {
+	return c.AddField("NUMPAGES", nil, nil, "")
+}
+
 // AddLine appends a VML line shape.
 func (c *Container) AddLine(s ...style.Line) *Line {
 	ln := &Line{}

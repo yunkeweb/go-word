@@ -55,6 +55,8 @@ func TestContainerCRUDAndAdders(t *testing.T) {
 	sec.AddPreserveText("{X}")
 	sec.AddCheckBox("n", "t")
 	sec.AddField("PAGE", map[string]string{"a": "b"}, []string{"\\*"}, "1")
+	sec.AddPageNumber()
+	sec.AddNumPages()
 	sec.AddLine()
 	sec.AddLine(style.Line{Weight: 1})
 	sec.AddShape("rect")
@@ -362,6 +364,9 @@ func TestMiscTypes(t *testing.T) {
 	}
 	if (&TOC{}).Type() != "TOC" {
 		t.Fatal("toc")
+	}
+	if (&TextWatermark{Text: "x"}).Type() != "TextWatermark" {
+		t.Fatal("text watermark")
 	}
 	ch := &Chart{}
 	if ch.Type() != "Chart" {

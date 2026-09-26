@@ -65,6 +65,7 @@ type pkgHF struct {
 	Type  string // default, first, even
 	Kind  string // header, footer
 	El    element.Element
+	Rels  []ooxml.Relationship
 }
 
 func newWord2007Writer(doc *Document) *word2007Writer {
@@ -192,12 +193,24 @@ func (w *word2007Writer) writeZipAfterDocument(zw *common.ZipWriter) error {
 		parts = append(parts, zipPart{name: h.Name, write: func(xw *common.XMLWriter) {
 			w.writeHdrFtr(xw, "w:hdr", h.El)
 		}})
+		if len(h.Rels) > 0 {
+			rels := ooxml.NewRelationships()
+			rels.Rel = h.Rels
+			data, _ := common.MarshalXML(rels)
+			parts = append(parts, zipPart{name: "word/_rels/" + path.Base(h.Name) + ".rels", data: data})
+		}
 	}
 	for _, f := range w.footers {
 		f := f
 		parts = append(parts, zipPart{name: f.Name, write: func(xw *common.XMLWriter) {
 			w.writeHdrFtr(xw, "w:ftr", f.El)
 		}})
+		if len(f.Rels) > 0 {
+			rels := ooxml.NewRelationships()
+			rels.Rel = f.Rels
+			data, _ := common.MarshalXML(rels)
+			parts = append(parts, zipPart{name: "word/_rels/" + path.Base(f.Name) + ".rels", data: data})
+		}
 	}
 	if len(w.doc.footnotes) > 0 {
 		parts = append(parts, zipPart{name: "word/footnotes.xml", write: func(xw *common.XMLWriter) {
@@ -252,6 +265,9 @@ func (w *word2007Writer) prepare() error {
 	w.revIndex = 0
 	w.doc.titles = nil
 
+	w.doc.applyWatermarks()
+	w.doc.syncEvenAndOddHeaders()
+
 	w.addRel(ooxml.NSOfficeRelStyles, "styles.xml", "")
 	w.addRel(ooxml.NSOfficeRelNumbering, "numbering.xml", "")
 	w.addRel(ooxml.NSOfficeRelSettings, "settings.xml", "")
@@ -274,9 +290,8 @@ func (w *word2007Writer) prepare() error {
 			id := w.addRel(ooxml.NSOfficeRelFooter, name, "")
 			w.footers = append(w.footers, pkgHF{RelID: id, Name: "word/" + name, Type: v.HeaderType, Kind: "footer", El: v})
 		case *element.Image:
-			if err := w.registerImage(v); err != nil {
-				// skip unreadable images; still produce a valid package
-			}
+			// Body vs header/footer images are registered after the walk so
+			// watermark pictures land in headerN.xml.rels, not document.xml.rels.
 		case *element.Link:
 			if !v.Internal && v.Target != "" {
 				w.addRel(ooxml.NSOfficeRelHyperlink, v.Target, "External")
@@ -286,6 +301,9 @@ func (w *word2007Writer) prepare() error {
 		case *element.Endnote:
 			ends = append(ends, v)
 		case *element.Title:
+			if v.BookmarkName == "" {
+				v.BookmarkName = "_Toc" + strconv.Itoa(len(w.doc.titles)+1)
+			}
 			w.doc.titles = append(w.doc.titles, v)
 		case *element.Chart:
 			w.chartIndex++
@@ -316,6 +334,31 @@ func (w *word2007Writer) prepare() error {
 	if len(w.comments) > 0 {
 		w.addRel(ooxml.NSOfficeRelComments, "comments.xml", "")
 	}
+	for _, sec := range w.doc.sections {
+		for _, el := range sec.Elements() {
+			walkElement(el, func(e element.Element) {
+				if img, ok := e.(*element.Image); ok {
+					_ = w.registerImage(img)
+				}
+			})
+		}
+	}
+	for i := range w.headers {
+		hf := &w.headers[i]
+		walkElement(hf.El, func(e element.Element) {
+			if img, ok := e.(*element.Image); ok {
+				_ = w.registerImageIn(img, hf)
+			}
+		})
+	}
+	for i := range w.footers {
+		hf := &w.footers[i]
+		walkElement(hf.El, func(e element.Element) {
+			if img, ok := e.(*element.Image); ok {
+				_ = w.registerImageIn(img, hf)
+			}
+		})
+	}
 	return nil
 }
 
@@ -344,6 +387,14 @@ func (w *word2007Writer) registerOLE(o *element.OLEObject) {
 }
 
 func (w *word2007Writer) registerImage(img *element.Image) error {
+	return w.addImagePart(img, nil)
+}
+
+func (w *word2007Writer) registerImageIn(img *element.Image, hf *pkgHF) error {
+	return w.addImagePart(img, hf)
+}
+
+func (w *word2007Writer) addImagePart(img *element.Image, hf *pkgHF) error {
 	data := img.Data
 	var err error
 	if len(data) == 0 && img.Source != "" {
@@ -376,9 +427,15 @@ func (w *word2007Writer) registerImage(img *element.Image) error {
 	}
 	w.imgIndex++
 	name := fmt.Sprintf("word/media/image%d.%s", w.imgIndex, format)
-	id := w.addRel(ooxml.NSOfficeRelImage, path.Base(path.Dir(name))+"/"+path.Base(name), "")
-	// Target relative to word/: media/imageN.ext
-	w.rels[len(w.rels)-1].Target = "media/" + path.Base(name)
+	target := "media/" + path.Base(name)
+	var id string
+	if hf != nil {
+		id = "rId" + strconv.Itoa(len(hf.Rels)+1)
+		hf.Rels = append(hf.Rels, ooxml.Relationship{ID: id, Type: ooxml.NSOfficeRelImage, Target: target})
+	} else {
+		id = w.addRel(ooxml.NSOfficeRelImage, target, "")
+		w.rels[len(w.rels)-1].Target = target
+	}
 	img.RelationID = relIDNum(id)
 	w.images = append(w.images, pkgImage{RelID: id, Name: name, Data: data, Ext: format, El: img})
 	return nil
