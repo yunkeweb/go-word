@@ -106,9 +106,7 @@ func (s *StreamWriter) registerResources(el element.Element) error {
 			return err
 		}
 	case *element.Link:
-		if !v.Internal && v.Target != "" {
-			s.inner.addRel(ooxml.NSOfficeRelHyperlink, v.Target, "External")
-		}
+		s.inner.registerLink(v, nil)
 	}
 	for _, child := range childElements(el) {
 		if err := s.registerResources(child); err != nil {

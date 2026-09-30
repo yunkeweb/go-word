@@ -26,8 +26,10 @@ type word2007Writer struct {
 	headers      []pkgHF
 	footers      []pkgHF
 	hyper        []ooxml.Relationship
+	linkIDs      map[*element.Link]string
 	charts       []pkgChart
 	comments     []*element.Comment
+	commentSeen  map[*element.Comment]bool
 	oles         []pkgOLE
 	imgIndex     int
 	hfIndex      int
@@ -252,11 +254,13 @@ func (w *word2007Writer) addRel(typ, target, mode string) string {
 
 func (w *word2007Writer) prepare() error {
 	w.rels = nil
+	w.linkIDs = make(map[*element.Link]string)
 	w.images = nil
 	w.headers = nil
 	w.footers = nil
 	w.charts = nil
 	w.comments = nil
+	w.commentSeen = make(map[*element.Comment]bool)
 	w.oles = nil
 	w.nextRel = 1
 	w.imgIndex = 0
@@ -299,10 +303,6 @@ func (w *word2007Writer) prepare() error {
 		case *element.Image:
 			// Body vs header/footer images are registered after the walk so
 			// watermark pictures land in headerN.xml.rels, not document.xml.rels.
-		case *element.Link:
-			if !v.Internal && v.Target != "" {
-				w.addRel(ooxml.NSOfficeRelHyperlink, v.Target, "External")
-			}
 		case *element.Footnote:
 			notes = append(notes, v)
 		case *element.Endnote:
@@ -347,8 +347,8 @@ func (w *word2007Writer) prepare() error {
 	for _, sec := range w.doc.sections {
 		for _, el := range sec.Elements() {
 			walkElement(el, func(e element.Element) {
-				if img, ok := e.(*element.Image); ok && resourceErr == nil {
-					resourceErr = w.registerImage(img)
+				if resourceErr == nil {
+					resourceErr = w.registerPartResource(e, nil)
 				}
 			})
 		}
@@ -356,16 +356,16 @@ func (w *word2007Writer) prepare() error {
 	for i := range w.headers {
 		hf := &w.headers[i]
 		walkElement(hf.El, func(e element.Element) {
-			if img, ok := e.(*element.Image); ok && resourceErr == nil {
-				resourceErr = w.registerImageIn(img, hf)
+			if resourceErr == nil {
+				resourceErr = w.registerPartResource(e, hf)
 			}
 		})
 	}
 	for i := range w.footers {
 		hf := &w.footers[i]
 		walkElement(hf.El, func(e element.Element) {
-			if img, ok := e.(*element.Image); ok && resourceErr == nil {
-				resourceErr = w.registerImageIn(img, hf)
+			if resourceErr == nil {
+				resourceErr = w.registerPartResource(e, hf)
 			}
 		})
 	}
@@ -373,9 +373,13 @@ func (w *word2007Writer) prepare() error {
 }
 
 func (w *word2007Writer) registerComment(c *element.Comment) {
-	if c == nil || c.CommentID > 0 {
+	if c == nil || w.commentSeen[c] {
 		return
 	}
+	if w.commentSeen == nil {
+		w.commentSeen = make(map[*element.Comment]bool)
+	}
+	w.commentSeen[c] = true
 	w.commentIndex++
 	c.CommentID = w.commentIndex
 	w.comments = append(w.comments, c)
@@ -403,6 +407,33 @@ func (w *word2007Writer) registerOLE(o *element.OLEObject) error {
 
 func (w *word2007Writer) registerImage(img *element.Image) error {
 	return w.addImagePart(img, nil)
+}
+
+func (w *word2007Writer) registerPartResource(el element.Element, hf *pkgHF) error {
+	switch v := el.(type) {
+	case *element.Image:
+		return w.addImagePart(v, hf)
+	case *element.Link:
+		w.registerLink(v, hf)
+	}
+	return nil
+}
+
+func (w *word2007Writer) registerLink(l *element.Link, hf *pkgHF) {
+	if l.Internal || l.Target == "" {
+		return
+	}
+	if w.linkIDs == nil {
+		w.linkIDs = make(map[*element.Link]string)
+	}
+	var id string
+	if hf == nil {
+		id = w.addRel(ooxml.NSOfficeRelHyperlink, l.Target, "External")
+	} else {
+		id = "rId" + strconv.Itoa(len(hf.Rels)+1)
+		hf.Rels = append(hf.Rels, ooxml.Relationship{ID: id, Type: ooxml.NSOfficeRelHyperlink, Target: l.Target, TargetMode: "External"})
+	}
+	w.linkIDs[l] = id
 }
 
 func (w *word2007Writer) registerImageIn(img *element.Image, hf *pkgHF) error {
@@ -482,11 +513,7 @@ func (w *word2007Writer) relFor(el element.Element) string {
 			}
 		}
 	case *element.Link:
-		for _, r := range w.rels {
-			if r.Type == ooxml.NSOfficeRelHyperlink && r.Target == v.Target {
-				return r.ID
-			}
-		}
+		return w.linkIDs[v]
 	case *element.Chart:
 		for _, ch := range w.charts {
 			if ch.El == v {
