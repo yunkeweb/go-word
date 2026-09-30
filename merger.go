@@ -42,6 +42,7 @@ func (d *Document) AppendDocument(src *Document, opts MergeOptions) error {
 	}
 
 	first := true
+	var clonedSections []*element.Section
 	for _, sec := range src.Sections() {
 		cloned := element.CloneSection(sec)
 		if cloned == nil {
@@ -59,8 +60,9 @@ func (d *Document) AppendDocument(src *Document, opts MergeOptions) error {
 		for _, f := range cloned.Footers {
 			f.SectionID = cloned.SectionID
 		}
-		remapClonedTree(cloned, styleMap, usedBM, opts.BookmarkPrefix)
+		clonedSections = append(clonedSections, cloned)
 	}
+	remapClonedTrees(clonedSections, styleMap, usedBM, opts.BookmarkPrefix)
 	return nil
 }
 
@@ -94,57 +96,61 @@ func (d *Document) mergeStyles(src *Document, prefix string) map[string]string {
 	return out
 }
 
-func remapClonedTree(root element.Element, styleMap map[string]string, usedBM map[string]bool, bmPrefix string) {
+func remapClonedTrees(roots []*element.Section, styleMap map[string]string, usedBM map[string]bool, bmPrefix string) {
 	bmMap := map[string]string{}
-	walkElement(root, func(el element.Element) {
-		switch v := el.(type) {
-		case *element.Bookmark:
-			old := v.Name
-			v.Name = uniqueName(v.Name, usedBM, bmPrefix)
-			if old != "" && old != v.Name {
-				bmMap[old] = v.Name
-			}
-		case *element.Title:
-			if v.BookmarkName != "" {
-				old := v.BookmarkName
-				v.BookmarkName = uniqueName(v.BookmarkName, usedBM, bmPrefix)
-				if old != v.BookmarkName {
-					bmMap[old] = v.BookmarkName
+	for _, root := range roots {
+		walkElement(root, func(el element.Element) {
+			switch v := el.(type) {
+			case *element.Bookmark:
+				old := v.Name
+				v.Name = uniqueName(v.Name, usedBM, bmPrefix)
+				if old != "" && old != v.Name {
+					bmMap[old] = v.Name
+				}
+			case *element.Title:
+				if v.BookmarkName != "" {
+					old := v.BookmarkName
+					v.BookmarkName = uniqueName(v.BookmarkName, usedBM, bmPrefix)
+					if old != v.BookmarkName {
+						bmMap[old] = v.BookmarkName
+					}
 				}
 			}
-		}
-	})
-	walkElement(root, func(el element.Element) {
-		switch v := el.(type) {
-		case *element.Text:
-			v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
-			v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
-		case *element.TextRun:
-			v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
-		case *element.Link:
-			v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
-			v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
-			if v.Internal {
-				if neu, ok := bmMap[v.Target]; ok {
-					v.Target = neu
+		})
+	}
+	for _, root := range roots {
+		walkElement(root, func(el element.Element) {
+			switch v := el.(type) {
+			case *element.Text:
+				v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
+				v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
+			case *element.TextRun:
+				v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
+			case *element.Link:
+				v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
+				v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
+				if v.Internal {
+					if neu, ok := bmMap[v.Target]; ok {
+						v.Target = neu
+					}
+				}
+			case *element.ListItem:
+				v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
+				v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
+			case *element.Table:
+				if v.Style.StyleName != "" {
+					if neu, ok := styleMap[v.Style.StyleName]; ok {
+						v.Style.StyleName = neu
+					}
+				}
+			case *element.Image:
+				v.RelationID = 0
+				if v.Media.Target != "" {
+					v.Media.Target = bmPrefix + v.Media.Target
 				}
 			}
-		case *element.ListItem:
-			v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
-			v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
-		case *element.Table:
-			if v.Style.StyleName != "" {
-				if neu, ok := styleMap[v.Style.StyleName]; ok {
-					v.Style.StyleName = neu
-				}
-			}
-		case *element.Image:
-			v.RelationID = 0
-			if v.Media.Target != "" {
-				v.Media.Target = bmPrefix + v.Media.Target
-			}
-		}
-	})
+		})
+	}
 }
 
 func remapStyleRef(ref any, styleMap map[string]string) any {

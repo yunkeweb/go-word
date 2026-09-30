@@ -86,6 +86,7 @@ type tblFrame struct {
 	tbl  *element.Table
 	row  *element.Row
 	cell *element.Cell
+	para *element.TextRun
 }
 
 func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string) error {
@@ -107,6 +108,19 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 			return nil
 		}
 		return frames[len(frames)-1].cell
+	}
+	currentRun := func() *element.TextRun {
+		if c := currentCell(); c != nil {
+			f := &frames[len(frames)-1]
+			if f.para == nil {
+				f.para = c.AddTextRun()
+			}
+			return f.para
+		}
+		if bodyRun == nil {
+			bodyRun = sec.AddTextRun()
+		}
+		return bodyRun
 	}
 	headingDepth := func(name string) int {
 		depth := 1
@@ -134,14 +148,7 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 			hyperText.WriteString(t)
 			return
 		}
-		if c := currentCell(); c != nil {
-			c.AddText(t, runFont())
-			return
-		}
-		if bodyRun == nil {
-			bodyRun = sec.AddTextRun()
-		}
-		bodyRun.AddText(t, runFont())
+		currentRun().AddText(t, runFont())
 	}
 	flushHyperlink := func() {
 		flushRun()
@@ -153,19 +160,28 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 		if target == "" && text == "" {
 			return
 		}
-		if c := currentCell(); c != nil {
-			c.AddLink(target, text, nil, nil, internal)
-			return
-		}
-		if bodyRun == nil {
-			bodyRun = sec.AddTextRun()
-		}
-		bodyRun.AddLink(target, text, nil, nil, internal)
+		currentRun().AddLink(target, text, nil, nil, internal)
 	}
 	flushPara := func() {
 		flushRun()
-		if currentCell() != nil {
+		if c := currentCell(); c != nil {
+			f := &frames[len(frames)-1]
+			if f.para != nil {
+				f.para.SetParagraphStyle(pStyle)
+				els := f.para.Elements()
+				if len(els) == 0 {
+					c.RemoveElement(f.para)
+				}
+				if len(els) == 1 {
+					if tx, ok := els[0].(*element.Text); ok {
+						c.RemoveElement(f.para)
+						c.AddText(tx.Content, tx.FontStyle, pStyle)
+					}
+				}
+				f.para = nil
+			}
 			pStyle = ""
+			bold, italic, color = false, false, ""
 			return
 		}
 		text := ""
@@ -225,7 +241,9 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 			switch local {
 			case "p":
 				pStyle = ""
-				if currentCell() == nil {
+				if c := currentCell(); c != nil {
+					frames[len(frames)-1].para = c.AddTextRun()
+				} else {
 					bodyRun = sec.AddTextRun()
 				}
 			case "pStyle":
@@ -251,7 +269,7 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 					break
 				}
 				if c := currentCell(); c != nil {
-					c.AddBookmark(name)
+					currentRun().AddBookmark(name)
 				} else if bodyRun != nil {
 					bodyRun.AddBookmark(name)
 				} else {
@@ -338,7 +356,7 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 			case "br":
 				if attr(t, "type") == "page" {
 					if currentCell() != nil {
-						flushRun()
+						flushPara()
 						currentCell().AddPageBreak()
 					} else {
 						flushPara()
@@ -357,10 +375,6 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 				flushRun()
 				bold, italic, color = false, false, ""
 			case "p":
-				if currentCell() != nil {
-					flushRun()
-					break
-				}
 				flushPara()
 			case "hyperlink":
 				flushHyperlink()

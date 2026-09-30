@@ -125,7 +125,7 @@ func extractCellText(c *element.Cell) string {
 			}
 		}
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, "\n")
 }
 
 func writeExtractLine(b *strings.Builder, s string) {
