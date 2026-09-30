@@ -31,7 +31,7 @@ Also included: tables with nested cells, headers/footers, images, lists, footnot
 ## Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.9.0
+go get github.com/yunkeweb/go-word@v0.10.0
 ```
 
 Requires **Go 1.21+**.
@@ -63,7 +63,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddTitle("GoWord v0.10.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

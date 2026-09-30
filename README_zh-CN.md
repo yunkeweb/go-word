@@ -31,7 +31,7 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.9.0
+go get github.com/yunkeweb/go-word@v0.10.0
 ```
 
 需要 **Go 1.21** 或更高版本。
@@ -63,7 +63,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddTitle("GoWord v0.10.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",
