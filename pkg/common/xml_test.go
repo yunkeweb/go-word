@@ -2,6 +2,7 @@ package common
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -82,4 +83,28 @@ func TestMarshalXML(t *testing.T) {
 	if _, err := MarshalXML(make(chan int)); err == nil {
 		t.Fatal("expected marshal error")
 	}
+}
+
+func TestXMLWriterPropagatesDirectWriteErrors(t *testing.T) {
+	sentinel := errors.New("payload write failed")
+	dest := &failOnXMLTextWriter{err: sentinel}
+	w := NewXMLWriterTo(dest)
+	w.Start("root")
+	w.Text("payload")
+	w.End()
+	if err := w.Flush(); !errors.Is(err, sentinel) {
+		t.Fatalf("Flush() error = %v, want %v", err, sentinel)
+	}
+}
+
+type failOnXMLTextWriter struct {
+	buf bytes.Buffer
+	err error
+}
+
+func (w *failOnXMLTextWriter) Write(p []byte) (int, error) {
+	if bytes.Contains(p, []byte("payload")) {
+		return 0, w.err
+	}
+	return w.buf.Write(p)
 }

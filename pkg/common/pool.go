@@ -56,6 +56,7 @@ func PutXMLWriter(w *XMLWriter) {
 		return
 	}
 	w.enc = nil
+	w.err = nil
 	w.stack = w.stack[:0]
 	w.attrBuf = w.attrBuf[:0]
 	if w.buf != nil {
@@ -72,6 +73,7 @@ func (w *XMLWriter) resetPooled() {
 	}
 	w.dest = nil
 	w.enc = xml.NewEncoder(w.buf)
+	w.err = nil
 	w.stack = w.stack[:0]
 	w.attrBuf = w.attrBuf[:0]
 }

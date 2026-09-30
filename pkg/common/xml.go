@@ -17,6 +17,7 @@ type XMLWriter struct {
 	enc     *xml.Encoder
 	stack   []string
 	attrBuf []xml.Attr
+	err     error
 }
 
 // NewXMLWriter returns a writer that emits UTF-8 XML into an in-memory buffer.
@@ -39,15 +40,23 @@ func (w *XMLWriter) sink() io.Writer {
 
 // StartDocument writes the XML declaration used by Office Open XML.
 func (w *XMLWriter) StartDocument() {
-	_, _ = io.WriteString(w.sink(), xmlDecl)
+	_, err := io.WriteString(w.sink(), xmlDecl)
+	w.recordError(err)
 }
 
 // Flush writes any buffered encoder output to the sink.
 func (w *XMLWriter) Flush() error {
 	if w.enc == nil {
-		return nil
+		return w.err
 	}
-	return w.enc.Flush()
+	w.recordError(w.enc.Flush())
+	return w.err
+}
+
+func (w *XMLWriter) recordError(err error) {
+	if w.err == nil && err != nil {
+		w.err = err
+	}
 }
 
 // Start opens an element. attrs is a sequence of name, value pairs.
@@ -64,7 +73,7 @@ func (w *XMLWriter) Start(name string, attrs ...string) {
 		})
 	}
 	el.Attr = w.attrBuf
-	_ = w.enc.EncodeToken(el)
+	w.recordError(w.enc.EncodeToken(el))
 	w.stack = append(w.stack, name)
 }
 
@@ -75,7 +84,7 @@ func (w *XMLWriter) End() {
 	}
 	name := w.stack[len(w.stack)-1]
 	w.stack = w.stack[:len(w.stack)-1]
-	_ = w.enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: name}})
+	w.recordError(w.enc.EncodeToken(xml.EndElement{Name: xml.Name{Local: name}}))
 }
 
 // Empty writes a start/end pair with optional attributes and no content.
@@ -126,8 +135,12 @@ func (w *XMLWriter) Text(s string) {
 	if s == "" {
 		return
 	}
-	_ = w.enc.Flush()
-	_, _ = io.WriteString(w.sink(), EscapeXMLText(s))
+	w.recordError(w.enc.Flush())
+	if w.err != nil {
+		return
+	}
+	_, err := io.WriteString(w.sink(), EscapeXMLText(s))
+	w.recordError(err)
 }
 
 // WT writes a w:t run of text, setting xml:space="preserve" when needed.
@@ -144,14 +157,18 @@ func (w *XMLWriter) WT(s string) {
 
 // Raw writes already-encoded XML after flushing the encoder.
 func (w *XMLWriter) Raw(s string) {
-	_ = w.enc.Flush()
-	_, _ = io.WriteString(w.sink(), s)
+	w.recordError(w.enc.Flush())
+	if w.err != nil {
+		return
+	}
+	_, err := io.WriteString(w.sink(), s)
+	w.recordError(err)
 }
 
 // Bytes flushes the encoder and returns the document.
 // Destination-mode writers return nil; use Flush and write to dest instead.
 func (w *XMLWriter) Bytes() []byte {
-	_ = w.enc.Flush()
+	w.recordError(w.enc.Flush())
 	if w.buf == nil {
 		return nil
 	}
@@ -165,7 +182,11 @@ func (w *XMLWriter) String() string {
 
 // WriteTo flushes and copies the document to dest.
 func (w *XMLWriter) WriteTo(dest io.Writer) (int64, error) {
-	n, err := dest.Write(w.Bytes())
+	b := w.Bytes()
+	if w.err != nil {
+		return 0, w.err
+	}
+	n, err := dest.Write(b)
 	return int64(n), err
 }
 
