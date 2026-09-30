@@ -101,6 +101,9 @@ func (s *StreamWriter) registerResources(el element.Element) error {
 		id := s.inner.addRel(ooxml.NSOfficeRelChart, name, "")
 		v.RelationID = relIDNum(id)
 		s.inner.charts = append(s.inner.charts, pkgChart{RelID: id, Name: "word/" + name, El: v})
+		if _, ok := s.inner.chartIDs[v]; !ok {
+			s.inner.chartIDs[v] = id
+		}
 	case *element.OLEObject:
 		if err := s.inner.registerOLE(v); err != nil {
 			return err

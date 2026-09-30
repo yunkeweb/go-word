@@ -23,14 +23,19 @@ type word2007Writer struct {
 	rels         []ooxml.Relationship
 	nextRel      int
 	images       []pkgImage
+	imageIDs     map[*element.Image]string
 	headers      []pkgHF
+	headerIDs    map[*element.Header]string
 	footers      []pkgHF
+	footerIDs    map[*element.Footer]string
 	hyper        []ooxml.Relationship
 	linkIDs      map[*element.Link]string
 	charts       []pkgChart
+	chartIDs     map[*element.Chart]string
 	comments     []*element.Comment
 	commentSeen  map[*element.Comment]bool
 	oles         []pkgOLE
+	oleIDs       map[*element.OLEObject]string
 	imgIndex     int
 	hfIndex      int
 	bkIndex      int
@@ -256,12 +261,17 @@ func (w *word2007Writer) prepare() error {
 	w.rels = nil
 	w.linkIDs = make(map[*element.Link]string)
 	w.images = nil
+	w.imageIDs = make(map[*element.Image]string)
 	w.headers = nil
+	w.headerIDs = make(map[*element.Header]string)
 	w.footers = nil
+	w.footerIDs = make(map[*element.Footer]string)
 	w.charts = nil
+	w.chartIDs = make(map[*element.Chart]string)
 	w.comments = nil
 	w.commentSeen = make(map[*element.Comment]bool)
 	w.oles = nil
+	w.oleIDs = make(map[*element.OLEObject]string)
 	w.nextRel = 1
 	w.imgIndex = 0
 	w.hfIndex = 0
@@ -295,11 +305,13 @@ func (w *word2007Writer) prepare() error {
 			name := fmt.Sprintf("header%d.xml", w.hfIndex)
 			id := w.addRel(ooxml.NSOfficeRelHeader, name, "")
 			w.headers = append(w.headers, pkgHF{RelID: id, Name: "word/" + name, Type: v.HeaderType, Kind: "header", El: v})
+			w.headerIDs[v] = id
 		case *element.Footer:
 			w.hfIndex++
 			name := fmt.Sprintf("footer%d.xml", w.hfIndex)
 			id := w.addRel(ooxml.NSOfficeRelFooter, name, "")
 			w.footers = append(w.footers, pkgHF{RelID: id, Name: "word/" + name, Type: v.HeaderType, Kind: "footer", El: v})
+			w.footerIDs[v] = id
 		case *element.Image:
 			// Body vs header/footer images are registered after the walk so
 			// watermark pictures land in headerN.xml.rels, not document.xml.rels.
@@ -318,6 +330,9 @@ func (w *word2007Writer) prepare() error {
 			id := w.addRel(ooxml.NSOfficeRelChart, name, "")
 			v.RelationID = relIDNum(id)
 			w.charts = append(w.charts, pkgChart{RelID: id, Name: "word/" + name, El: v})
+			if _, ok := w.chartIDs[v]; !ok {
+				w.chartIDs[v] = id
+			}
 		case *element.Comment:
 			w.registerComment(v)
 		case *element.OLEObject:
@@ -402,6 +417,9 @@ func (w *word2007Writer) registerOLE(o *element.OLEObject) error {
 	id := w.addRel(ooxml.NSOfficeRelOleObject, name, "")
 	o.RelationID = relIDNum(id)
 	w.oles = append(w.oles, pkgOLE{RelID: id, Name: "word/" + name, Data: data, El: o})
+	if _, ok := w.oleIDs[o]; !ok {
+		w.oleIDs[o] = id
+	}
 	return nil
 }
 
@@ -484,6 +502,9 @@ func (w *word2007Writer) addImagePart(img *element.Image, hf *pkgHF) error {
 	}
 	img.RelationID = relIDNum(id)
 	w.images = append(w.images, pkgImage{RelID: id, Name: name, Data: data, Ext: format, El: img})
+	if _, ok := w.imageIDs[img]; !ok {
+		w.imageIDs[img] = id
+	}
 	return nil
 }
 
@@ -495,37 +516,17 @@ func relIDNum(id string) int {
 func (w *word2007Writer) relFor(el element.Element) string {
 	switch v := el.(type) {
 	case *element.Image:
-		for _, img := range w.images {
-			if img.El == v {
-				return img.RelID
-			}
-		}
+		return w.imageIDs[v]
 	case *element.Header:
-		for _, h := range w.headers {
-			if h.El == v {
-				return h.RelID
-			}
-		}
+		return w.headerIDs[v]
 	case *element.Footer:
-		for _, f := range w.footers {
-			if f.El == v {
-				return f.RelID
-			}
-		}
+		return w.footerIDs[v]
 	case *element.Link:
 		return w.linkIDs[v]
 	case *element.Chart:
-		for _, ch := range w.charts {
-			if ch.El == v {
-				return ch.RelID
-			}
-		}
+		return w.chartIDs[v]
 	case *element.OLEObject:
-		for _, o := range w.oles {
-			if o.El == v {
-				return o.RelID
-			}
-		}
+		return w.oleIDs[v]
 	}
 	return ""
 }

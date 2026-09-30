@@ -90,7 +90,7 @@ type tblFrame struct {
 }
 
 func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string) error {
-	dec := xml.NewDecoder(strings.NewReader(string(data)))
+	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
 		frames        []tblFrame
 		inHyper       bool
