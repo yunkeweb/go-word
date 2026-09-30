@@ -25,6 +25,22 @@ Thumbs.db
 grok.md
 GROK.md
 
+# Local assistant configuration and working notes
+.codex/
+.agents/
+.claude/
+.cursor/
+.aider*
+.clinerules/
+.roo/
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+.cursorrules
+.clinerules
+.roorules
+.github/copilot-instructions.md
+
 # Coverage
 coverage.out
 coverage.html
