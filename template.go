@@ -1,7 +1,6 @@
 package word
 
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/xml"
 	"fmt"
@@ -63,23 +62,50 @@ type TemplateProcessor struct {
 
 // NewTemplateProcessor opens a .docx template from disk.
 func NewTemplateProcessor(filename string) (*TemplateProcessor, error) {
-	data, err := os.ReadFile(filename)
+	return NewTemplateProcessorWithOptions(filename, ReadOptions{})
+}
+
+// NewTemplateProcessorWithOptions opens a disk template with ZIP read budgets.
+func NewTemplateProcessorWithOptions(filename string, opts ReadOptions) (*TemplateProcessor, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	zr, err := common.OpenZipFileWithLimit(filename, opts.MaxArchiveSize)
 	if err != nil {
 		return nil, err
 	}
-	return NewTemplateProcessorBytes(data)
+	defer zr.Close()
+	return loadTemplate(zr, opts)
 }
 
 // NewTemplateProcessorBytes opens a .docx template from memory.
 func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	return NewTemplateProcessorBytesWithOptions(data, ReadOptions{})
+}
+
+// NewTemplateProcessorBytesWithOptions opens a template with ZIP read budgets.
+func NewTemplateProcessorBytesWithOptions(data []byte, opts ReadOptions) (*TemplateProcessor, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	if err := validateZipLimits(nil, int64(len(data)), opts); err != nil {
+		return nil, err
+	}
+	zr, err := common.OpenZipBytes(data)
 	if err != nil {
+		return nil, err
+	}
+	return loadTemplate(zr, opts)
+}
+
+func loadTemplate(zr *common.ZipReader, opts ReadOptions) (*TemplateProcessor, error) {
+	if err := validateZipLimits(zr.Files(), -1, opts); err != nil {
 		return nil, err
 	}
 	tp := &TemplateProcessor{files: map[string][]byte{}, values: map[string]string{}}
 	tp.initMacros()
-	for _, f := range zr.File {
-		rc, err := f.Open()
+	for _, f := range zr.Files() {
+		rc, err := common.OpenZipEntry(f, opts.partLimit())
 		if err != nil {
 			return nil, err
 		}

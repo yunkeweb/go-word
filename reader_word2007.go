@@ -3,7 +3,9 @@ package word
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -22,33 +24,51 @@ func (word2007Reader) Load(filename string) (*Document, error) {
 		return nil, err
 	}
 	defer zr.Close()
-	return loadWord2007(zr)
+	return loadWord2007(zr, ReadOptions{})
 }
 
 func LoadBytes(data []byte) (*Document, error) {
+	return LoadBytesWithOptions(data, ReadOptions{})
+}
+
+// LoadBytesWithOptions loads a document with optional ZIP read budgets.
+func LoadBytesWithOptions(data []byte, opts ReadOptions) (*Document, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	if err := validateZipLimits(nil, int64(len(data)), opts); err != nil {
+		return nil, err
+	}
 	zr, err := common.OpenZipBytes(data)
 	if err != nil {
 		return nil, err
 	}
-	return loadWord2007(zr)
+	return loadWord2007(zr, opts)
 }
 
-func loadWord2007(zr *common.ZipReader) (*Document, error) {
+func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
+	if err := validateZipLimits(zr.Files(), -1, opts); err != nil {
+		return nil, err
+	}
 	doc := New()
-	raw, err := zr.ReadFile("word/document.xml")
+	raw, err := zr.ReadFileWithLimit("word/document.xml", opts.partLimit())
 	if err != nil {
 		return nil, err
 	}
 	rels := map[string]string{}
-	if relRaw, err := zr.ReadFile("word/_rels/document.xml.rels"); err == nil {
+	if relRaw, err := zr.ReadFileWithLimit("word/_rels/document.xml.rels", opts.partLimit()); err == nil {
 		rels = parseRelationshipTargets(relRaw)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 	sec := doc.AddSection()
 	if err := parseDocumentXMLRels(raw, sec, rels); err != nil {
 		return nil, err
 	}
-	if core, err := zr.ReadFile("docProps/core.xml"); err == nil {
+	if core, err := zr.ReadFileWithLimit("docProps/core.xml", opts.partLimit()); err == nil {
 		parseCoreProperties(core, doc.info)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 	doc.imagesLoaded = true
 	for _, f := range zr.Files() {
@@ -57,7 +77,7 @@ func loadWord2007(zr *common.ZipReader) (*Document, error) {
 		if !strings.HasPrefix(lower, "word/media/") || strings.HasSuffix(name, "/") {
 			continue
 		}
-		data, err := zr.ReadFile(f.Name)
+		data, err := zr.ReadFileWithLimit(f.Name, opts.partLimit())
 		if err != nil {
 			return nil, err
 		}

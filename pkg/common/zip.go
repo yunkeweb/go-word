@@ -3,11 +3,16 @@ package common
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"strings"
 )
+
+// ErrZipLimitExceeded reports that a ZIP package exceeds a caller-supplied limit.
+var ErrZipLimitExceeded = errors.New("zip: configured size limit exceeded")
 
 // ZipWriter is a thin archive/zip helper for OOXML packages.
 type ZipWriter struct {
@@ -46,6 +51,15 @@ type ZipReader struct {
 
 // OpenZipFile opens a zip from disk.
 func OpenZipFile(filename string) (*ZipReader, error) {
+	return OpenZipFileWithLimit(filename, 0)
+}
+
+// OpenZipFileWithLimit rejects archives larger than maxBytes before parsing.
+// Zero means unlimited; negative values are invalid.
+func OpenZipFileWithLimit(filename string, maxBytes int64) (*ZipReader, error) {
+	if maxBytes < 0 {
+		return nil, fmt.Errorf("zip: negative archive limit")
+	}
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -54,6 +68,10 @@ func OpenZipFile(filename string) (*ZipReader, error) {
 	if err != nil {
 		f.Close()
 		return nil, err
+	}
+	if maxBytes > 0 && st.Size() > maxBytes {
+		f.Close()
+		return nil, ErrZipLimitExceeded
 	}
 	zr, err := zip.NewReader(f, st.Size())
 	if err != nil {
@@ -83,17 +101,27 @@ func (z *ZipReader) Close() error {
 // Files returns the zip directory.
 func (z *ZipReader) Files() []*zip.File { return z.zr.File }
 
-// ReadFile returns the contents of name, or nil if missing.
+// ReadFile returns the contents of name, or os.ErrNotExist if missing.
 func (z *ZipReader) ReadFile(name string) ([]byte, error) {
+	return z.ReadFileWithLimit(name, 0)
+}
+
+// ReadFileWithLimit reads name and rejects entries larger than maxBytes.
+// Zero means no limit; negative values are invalid.
+func (z *ZipReader) ReadFileWithLimit(name string, maxBytes int64) ([]byte, error) {
 	name = strings.ReplaceAll(name, "\\", "/")
 	for _, f := range z.zr.File {
 		if f.Name == name {
-			rc, err := f.Open()
+			rc, err := OpenZipEntry(f, maxBytes)
 			if err != nil {
 				return nil, err
 			}
 			defer rc.Close()
-			return io.ReadAll(rc)
+			data, err := io.ReadAll(rc)
+			if err != nil {
+				return nil, err
+			}
+			return data, nil
 		}
 	}
 	return nil, os.ErrNotExist

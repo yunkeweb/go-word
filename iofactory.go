@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/pkg/common"
 )
 
 func variableRegexp() *regexp.Regexp {
@@ -54,6 +55,21 @@ func Read(r io.Reader) (*Document, error) {
 	return LoadBytes(data)
 }
 
+// ReadWithOptions loads a document from r with optional ZIP read budgets.
+func ReadWithOptions(r io.Reader, opts ReadOptions) (*Document, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, io.ErrUnexpectedEOF
+	}
+	data, err := common.ReadAllWithLimit(r, opts.MaxArchiveSize)
+	if err != nil {
+		return nil, err
+	}
+	return LoadBytesWithOptions(data, opts)
+}
+
 // Load loads a document (PHPWord IOFactory::load).
 // If readerName is omitted, the format is inferred from the file extension.
 func Load(filename string, readerName ...string) (*Document, error) {
@@ -71,6 +87,24 @@ func Load(filename string, readerName ...string) (*Document, error) {
 		return nil, err
 	}
 	return r.Load(filename)
+}
+
+// LoadWithOptions loads a document from disk with optional ZIP read budgets.
+func LoadWithOptions(filename string, opts ReadOptions) (*Document, error) {
+	if err := opts.validate(); err != nil {
+		return nil, err
+	}
+	zr, err := common.OpenZipFileWithLimit(filename, opts.MaxArchiveSize)
+	if err != nil {
+		return nil, err
+	}
+	defer zr.Close()
+	return loadWord2007(zr, opts)
+}
+
+// OpenWithOptions is the Open counterpart with optional ZIP read budgets.
+func OpenWithOptions(filename string, opts ReadOptions) (*Document, error) {
+	return LoadWithOptions(filename, opts)
 }
 
 // ExtractVariables returns ${placeholder} names from a template file.
