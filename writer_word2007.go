@@ -280,7 +280,11 @@ func (w *word2007Writer) prepare() error {
 
 	var notes []*element.Footnote
 	var ends []*element.Endnote
+	var resourceErr error
 	walkDocument(w.doc, func(el element.Element) {
+		if resourceErr != nil {
+			return
+		}
 		switch v := el.(type) {
 		case *element.Header:
 			w.hfIndex++
@@ -317,7 +321,7 @@ func (w *word2007Writer) prepare() error {
 		case *element.Comment:
 			w.registerComment(v)
 		case *element.OLEObject:
-			w.registerOLE(v)
+			resourceErr = w.registerOLE(v)
 		}
 		if g, ok := el.(interface{ GetCommentRangeStart() *element.Comment }); ok {
 			w.registerComment(g.GetCommentRangeStart())
@@ -326,6 +330,9 @@ func (w *word2007Writer) prepare() error {
 			w.registerComment(g.GetCommentRangeEnd())
 		}
 	})
+	if resourceErr != nil {
+		return resourceErr
+	}
 	w.doc.footnotes = notes
 	w.doc.endnotes = ends
 	if len(notes) > 0 {
@@ -340,8 +347,8 @@ func (w *word2007Writer) prepare() error {
 	for _, sec := range w.doc.sections {
 		for _, el := range sec.Elements() {
 			walkElement(el, func(e element.Element) {
-				if img, ok := e.(*element.Image); ok {
-					_ = w.registerImage(img)
+				if img, ok := e.(*element.Image); ok && resourceErr == nil {
+					resourceErr = w.registerImage(img)
 				}
 			})
 		}
@@ -349,20 +356,20 @@ func (w *word2007Writer) prepare() error {
 	for i := range w.headers {
 		hf := &w.headers[i]
 		walkElement(hf.El, func(e element.Element) {
-			if img, ok := e.(*element.Image); ok {
-				_ = w.registerImageIn(img, hf)
+			if img, ok := e.(*element.Image); ok && resourceErr == nil {
+				resourceErr = w.registerImageIn(img, hf)
 			}
 		})
 	}
 	for i := range w.footers {
 		hf := &w.footers[i]
 		walkElement(hf.El, func(e element.Element) {
-			if img, ok := e.(*element.Image); ok {
-				_ = w.registerImageIn(img, hf)
+			if img, ok := e.(*element.Image); ok && resourceErr == nil {
+				resourceErr = w.registerImageIn(img, hf)
 			}
 		})
 	}
-	return nil
+	return resourceErr
 }
 
 func (w *word2007Writer) registerComment(c *element.Comment) {
@@ -374,19 +381,24 @@ func (w *word2007Writer) registerComment(c *element.Comment) {
 	w.comments = append(w.comments, c)
 }
 
-func (w *word2007Writer) registerOLE(o *element.OLEObject) {
+func (w *word2007Writer) registerOLE(o *element.OLEObject) error {
 	data := o.Media.Data
 	if len(data) == 0 && o.Source != "" {
-		data, _ = common.ReadFile(o.Source)
+		var err error
+		data, err = common.ReadFile(o.Source)
+		if err != nil {
+			return fmt.Errorf("word: read OLE %q: %w", o.Source, err)
+		}
 	}
 	if len(data) == 0 {
-		return
+		return fmt.Errorf("word: empty OLE object")
 	}
 	w.oleIndex++
 	name := fmt.Sprintf("embeddings/oleObject%d.bin", w.oleIndex)
 	id := w.addRel(ooxml.NSOfficeRelOleObject, name, "")
 	o.RelationID = relIDNum(id)
 	w.oles = append(w.oles, pkgOLE{RelID: id, Name: "word/" + name, Data: data, El: o})
+	return nil
 }
 
 func (w *word2007Writer) registerImage(img *element.Image) error {

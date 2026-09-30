@@ -221,7 +221,6 @@ func TestWriterAllElementsAndSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	sec.AddImage(imgPath)
-	sec.AddImage("missing.png")
 	inlineRun := sec.AddTextRun()
 	inlineRun.AddImageBytes("in.png", pngData)
 
@@ -300,7 +299,6 @@ func TestWriterAllElementsAndSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	sec.AddOLEObject(olePath)
-	sec.AddOLEObject("missing.ole")
 
 	src := New()
 	src.AddSection().AddText("merged-src")

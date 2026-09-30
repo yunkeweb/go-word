@@ -53,7 +53,8 @@ func (s *StreamWriter) WriteParagraph(text string, styles ...any) error {
 	}
 	t := element.NewText(text, font, para)
 	s.inner.writeText(s.xw, t, false)
-	return s.xw.Flush()
+	s.err = s.xw.Flush()
+	return s.err
 }
 
 // WriteTable writes a table, flushing XML after each row.
@@ -64,8 +65,12 @@ func (s *StreamWriter) WriteTable(tbl *element.Table) error {
 	if tbl == nil {
 		return fmt.Errorf("word: nil table")
 	}
+	if s.err = s.registerResources(tbl); s.err != nil {
+		return s.err
+	}
 	s.inner.writeTable(s.xw, tbl)
-	return s.xw.Flush()
+	s.err = s.xw.Flush()
+	return s.err
 }
 
 // WriteElement writes any document body element into the stream.
@@ -76,9 +81,20 @@ func (s *StreamWriter) WriteElement(el element.Element) error {
 	if el == nil {
 		return fmt.Errorf("word: nil element")
 	}
+	if s.err = s.registerResources(el); s.err != nil {
+		return s.err
+	}
+	s.inner.writeElement(s.xw, el, false)
+	s.err = s.xw.Flush()
+	return s.err
+}
+
+func (s *StreamWriter) registerResources(el element.Element) error {
 	switch v := el.(type) {
 	case *element.Image:
-		_ = s.inner.registerImage(v)
+		if err := s.inner.registerImage(v); err != nil {
+			return err
+		}
 	case *element.Chart:
 		s.inner.chartIndex++
 		name := fmt.Sprintf("charts/chart%d.xml", s.inner.chartIndex)
@@ -86,14 +102,20 @@ func (s *StreamWriter) WriteElement(el element.Element) error {
 		v.RelationID = relIDNum(id)
 		s.inner.charts = append(s.inner.charts, pkgChart{RelID: id, Name: "word/" + name, El: v})
 	case *element.OLEObject:
-		s.inner.registerOLE(v)
+		if err := s.inner.registerOLE(v); err != nil {
+			return err
+		}
 	case *element.Link:
 		if !v.Internal && v.Target != "" {
 			s.inner.addRel(ooxml.NSOfficeRelHyperlink, v.Target, "External")
 		}
 	}
-	s.inner.writeElement(s.xw, el, false)
-	return s.xw.Flush()
+	for _, child := range childElements(el) {
+		if err := s.registerResources(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // BytesWritten returns the number of bytes written to dest so far.
@@ -112,6 +134,9 @@ func (s *StreamWriter) Close() error {
 	s.closed = true
 	if err := s.begin(); err != nil {
 		s.err = err
+		if s.zw != nil {
+			_ = s.zw.Close()
+		}
 		return err
 	}
 	s.inner.writeSectPr(s.xw, s.sec)
