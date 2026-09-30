@@ -17,6 +17,9 @@ hero:
       link: https://github.com/yunkeweb/go-word
 
 features:
+  - title: 可控 ZIP 读取预算
+    details: DOM、模板和流式读取器通过 ReadOptions 与 WithOptions API 限制压缩包字节数、单部件解压大小、声明的解压总量及条目数。
+    link: /zh/guide/streaming
   - title: 零依赖
     details: 只用 encoding/xml、archive/zip、image、sync。go.mod 没有任何第三方 require，可直接进入隔离与合规环境。
   - title: OMML 公式引擎
@@ -42,8 +45,16 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.9.0"><img src="https://img.shields.io/badge/release-v0.9.0-green.svg" alt="v0.9.0" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.10.0"><img src="https://img.shields.io/badge/release-v0.10.0-green.svg" alt="v0.10.0" /></a>
 </p>
+
+## v0.10.0 更新
+
+- 新增 `ReadOptions` 与 `WithOptions` API，可配置 ZIP 读取预算；旧 API 继续保持无限制行为。详见 [限制说明与可运行示例](/zh/guide/streaming)。
+- 修复写出错误传播、重复保存批注、页眉页脚关系、模板图片 XML 与分隔符隔离，以及读取和合并时的文本、书签保真问题。
+- 减少 XML 输入复制，缓存资源关系查找。
+
+查看 [v0.10.0 发行版](https://github.com/yunkeweb/go-word/releases/tag/v0.10.0) 与 [更新日志](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md)。
 
 ## 核心优势
 
@@ -113,7 +124,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.9.0", 1)
+	sec.AddTitle("GoWord v0.10.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -124,7 +135,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.9.0
+go get github.com/yunkeweb/go-word@v0.10.0
 ```
 
 接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)、[SDT](/zh/guide/sdt)、[表格](/zh/guide/table)、[水印与保护](/zh/guide/protect)，以及四份 [企业级实战案例](/zh/guide/recipes)。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。
