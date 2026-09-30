@@ -3,12 +3,14 @@ package word
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/yunkeweb/go-word/element"
 	"github.com/yunkeweb/go-word/ooxml"
@@ -16,33 +18,47 @@ import (
 )
 
 var (
-	macroOpen  = "${"
-	macroClose = "}"
+	macroDefaultsMu sync.RWMutex
+	macroOpen       = "${"
+	macroClose      = "}"
 )
 
 // SetMacroOpeningChars sets the placeholder opening delimiter (PHPWord).
-func SetMacroOpeningChars(s string) { macroOpen = s }
+func SetMacroOpeningChars(s string) { macroDefaultsMu.Lock(); macroOpen = s; macroDefaultsMu.Unlock() }
 
 // SetMacroClosingChars sets the placeholder closing delimiter.
-func SetMacroClosingChars(s string) { macroClose = s }
+func SetMacroClosingChars(s string) { macroDefaultsMu.Lock(); macroClose = s; macroDefaultsMu.Unlock() }
 
 // SetMacroChars sets both placeholder delimiters.
 func SetMacroChars(open, close string) {
+	macroDefaultsMu.Lock()
 	macroOpen = open
 	macroClose = close
+	macroDefaultsMu.Unlock()
 }
 
-func (t *TemplateProcessor) SetMacroOpeningChars(s string) { SetMacroOpeningChars(s) }
-func (t *TemplateProcessor) SetMacroClosingChars(s string) { SetMacroClosingChars(s) }
+func (t *TemplateProcessor) SetMacroOpeningChars(s string) {
+	t.initMacros()
+	t.SetMacroChars(s, t.macroClose)
+}
+func (t *TemplateProcessor) SetMacroClosingChars(s string) {
+	t.initMacros()
+	t.SetMacroChars(t.macroOpen, s)
+}
 func (t *TemplateProcessor) SetMacroChars(open, close string) {
-	SetMacroChars(open, close)
+	t.macroOpen = open
+	t.macroClose = close
+	t.macroPattern = regexp.MustCompile(regexp.QuoteMeta(open) + `(.+?)` + regexp.QuoteMeta(close))
 }
 
 // TemplateProcessor fills ${placeholders} in an existing .docx (PHPWord TemplateProcessor).
 type TemplateProcessor struct {
-	files  map[string][]byte
-	order  []string
-	values map[string]string
+	files        map[string][]byte
+	order        []string
+	values       map[string]string
+	macroOpen    string
+	macroClose   string
+	macroPattern *regexp.Regexp
 }
 
 // NewTemplateProcessor opens a .docx template from disk.
@@ -61,6 +77,7 @@ func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error) {
 		return nil, err
 	}
 	tp := &TemplateProcessor{files: map[string][]byte{}, values: map[string]string{}}
+	tp.initMacros()
 	for _, f := range zr.File {
 		rc, err := f.Open()
 		if err != nil {
@@ -92,7 +109,33 @@ func (t *TemplateProcessor) xmlParts() []string {
 	return out
 }
 
-func macro(name string) string { return macroOpen + name + macroClose }
+func (t *TemplateProcessor) macro(name string) string {
+	t.initMacros()
+	return t.macroOpen + name + t.macroClose
+}
+
+func (t *TemplateProcessor) unwrapMacro(s string) string {
+	s = strings.TrimSpace(s)
+	t.initMacros()
+	s = strings.TrimPrefix(s, t.macroOpen)
+	s = strings.TrimSuffix(s, t.macroClose)
+	return decodeMacroXML(s)
+}
+
+func (t *TemplateProcessor) macroRegexp() *regexp.Regexp {
+	t.initMacros()
+	return t.macroPattern
+}
+
+func (t *TemplateProcessor) initMacros() {
+	if t.macroPattern != nil {
+		return
+	}
+	macroDefaultsMu.RLock()
+	open, close := macroOpen, macroClose
+	macroDefaultsMu.RUnlock()
+	t.SetMacroChars(open, close)
+}
 
 func (t *TemplateProcessor) replaceAll(old, new string) {
 	for _, name := range t.xmlParts() {
@@ -107,14 +150,14 @@ func (t *TemplateProcessor) SetValue(search, replace string) {
 
 // SetValueLimit replaces at most limit occurrences (-1 = all).
 func (t *TemplateProcessor) SetValueLimit(search, replace string, limit int) {
-	search = unwrapMacro(search)
+	search = t.unwrapMacro(search)
 	if t.values == nil {
 		t.values = map[string]string{}
 	}
 	t.values[search] = replace
 	t.applyPipesFor(search)
 	replace = t.ReplaceCarriageReturns(xmlEscape(replace))
-	old := []byte(macro(search))
+	old := []byte(t.macro(search))
 	neu := []byte(replace)
 	for _, name := range t.xmlParts() {
 		if limit == 0 {
@@ -145,8 +188,8 @@ func (t *TemplateProcessor) SetValues(values map[string]string) {
 // renaming macros to ${search#1}, ${search#2}, ... Vertically merged
 // (w:vMerge restart/continue) rows are cloned as a single group.
 func (t *TemplateProcessor) CloneRow(search string, count int) error {
-	search = unwrapMacro(search)
-	needle := macro(search)
+	search = t.unwrapMacro(search)
+	needle := t.macro(search)
 	name := t.mainPart()
 	xml := string(t.files[name])
 	row, start, end := extractRowGroupContaining(xml, needle)
@@ -159,7 +202,7 @@ func (t *TemplateProcessor) CloneRow(search string, count int) error {
 	}
 	var b strings.Builder
 	for i := 1; i <= count; i++ {
-		b.WriteString(indexMacros(row, i))
+		b.WriteString(t.indexMacros(row, i))
 	}
 	t.files[name] = []byte(xml[:start] + b.String() + xml[end:])
 	return nil
@@ -171,7 +214,7 @@ func (t *TemplateProcessor) CloneRow(search string, count int) error {
 func (t *TemplateProcessor) CloneBlock(blockName string, count int) error {
 	name := t.mainPart()
 	xml := string(t.files[name])
-	openStart, openEnd, closeStart, closeEnd, ok := findBlockBounds(xml, blockName)
+	openStart, openEnd, closeStart, closeEnd, ok := t.findBlockBounds(xml, blockName)
 	if !ok {
 		return fmt.Errorf("word: block %s not found", blockName)
 	}
@@ -182,7 +225,7 @@ func (t *TemplateProcessor) CloneBlock(blockName string, count int) error {
 	block := xml[openEnd:closeStart]
 	var b strings.Builder
 	for n := 1; n <= count; n++ {
-		b.WriteString(indexMacros(block, n))
+		b.WriteString(t.indexMacros(block, n))
 	}
 	t.files[name] = []byte(xml[:openStart] + b.String() + xml[closeEnd:])
 	return nil
@@ -192,7 +235,7 @@ func (t *TemplateProcessor) CloneBlock(blockName string, count int) error {
 func (t *TemplateProcessor) ReplaceBlock(blockName, replacement string) error {
 	name := t.mainPart()
 	xml := string(t.files[name])
-	openStart, _, _, closeEnd, ok := findBlockBounds(xml, blockName)
+	openStart, _, _, closeEnd, ok := t.findBlockBounds(xml, blockName)
 	if !ok {
 		return fmt.Errorf("word: block %s not found", blockName)
 	}
@@ -216,7 +259,7 @@ func (t *TemplateProcessor) SetImageValue(search, path string) error {
 
 // SetImageValueBytes embeds image bytes at ${search}.
 func (t *TemplateProcessor) SetImageValueBytes(search, filename string, data []byte) error {
-	search = unwrapMacro(search)
+	search = t.unwrapMacro(search)
 	ext := "png"
 	if i := strings.LastIndexByte(filename, '.'); i >= 0 {
 		ext = strings.ToLower(filename[i+1:])
@@ -233,28 +276,88 @@ func (t *TemplateProcessor) SetImageValueBytes(search, filename string, data []b
 	media := fmt.Sprintf("word/media/imageT%d.%s", idx, ext)
 	t.files[media] = data
 	t.order = append(t.order, media)
-
-	rid := t.addImageRel(media, ext)
-	drawing := fmt.Sprintf(
-		`<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`+
-			`<wp:extent cx="990600" cy="792480"/>`+
-			`<wp:docPr id="%d" name="%s"/>`+
-			`<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`+
-			`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
-			`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
-			`<pic:nvPicPr><pic:cNvPr id="0" name="%s"/><pic:cNvPicPr/></pic:nvPicPr>`+
-			`<pic:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`+
-			`<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="990600" cy="792480"/></a:xfrm>`+
-			`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`+
-			`</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`,
-		idx, xmlEscape(filename), xmlEscape(filename), rid)
-	t.replaceAll(macro(search), drawing)
+	needle := t.macro(search)
+	for _, part := range t.xmlParts() {
+		if !bytes.Contains(t.files[part], []byte(needle)) {
+			continue
+		}
+		rid := t.addImageRelForPart(part, media, ext)
+		drawingID := 1
+		dec := xml.NewDecoder(bytes.NewReader(t.files[part]))
+		for {
+			tok, err := dec.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "docPr" {
+				if n := atoi(attr(se, "id")); n >= drawingID {
+					drawingID = n + 1
+				}
+			}
+		}
+		makeDrawing := func() string {
+			drawing := fmt.Sprintf(
+				`<w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><wp:inline distT="0" distB="0" distL="0" distR="0">`+
+					`<wp:extent cx="990600" cy="792480"/>`+
+					`<wp:docPr id="%d" name="%s"/>`+
+					`<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">`+
+					`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
+					`<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
+					`<pic:nvPicPr><pic:cNvPr id="0" name="%s"/><pic:cNvPicPr/></pic:nvPicPr>`+
+					`<pic:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`+
+					`<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="990600" cy="792480"/></a:xfrm>`+
+					`<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`+
+					`</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`,
+				drawingID, xmlEscape(filename), xmlEscape(filename), rid)
+			drawingID++
+			return drawing
+		}
+		t.files[part] = wtTextRe.ReplaceAllFunc(t.files[part], func(tag []byte) []byte {
+			if !bytes.Contains(tag, []byte(needle)) {
+				return tag
+			}
+			start := bytes.IndexByte(tag, '>') + 1
+			pieces := strings.Split(string(tag[start:len(tag)-len("</w:t>")]), needle)
+			var b strings.Builder
+			for i, text := range pieces {
+				if i > 0 {
+					b.WriteString(makeDrawing())
+				}
+				b.WriteString(`<w:t xml:space="preserve">`)
+				b.WriteString(text)
+				b.WriteString(`</w:t>`)
+			}
+			return []byte(b.String())
+		})
+	}
 	return nil
 }
 
 func (t *TemplateProcessor) addImageRel(mediaPath, ext string) string {
-	relsName := "word/_rels/document.xml.rels"
+	return t.addImageRelForPart("word/document.xml", mediaPath, ext)
+}
+
+func relationshipPartName(part string) string {
+	part = strings.ReplaceAll(part, "\\", "/")
+	i := strings.LastIndexByte(part, '/')
+	if i < 0 {
+		return "_rels/" + part + ".rels"
+	}
+	dir, base := part[:i], part[i+1:]
+	return dir + "/_rels/" + base + ".rels"
+}
+
+func (t *TemplateProcessor) addImageRelForPart(part, mediaPath, ext string) string {
+	relsName := relationshipPartName(part)
 	rels := string(t.files[relsName])
+	if rels == "" {
+		rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`
+		t.files[relsName] = []byte(rels)
+		t.order = append(t.order, relsName)
+	}
 	id := nextRelID(rels)
 	target := strings.TrimPrefix(mediaPath, "word/")
 	entry := fmt.Sprintf(`<Relationship Id="%s" Type="%s" Target="%s"/>`,
@@ -311,16 +414,7 @@ func lastTagStart(xml, local string) int {
 	return s2
 }
 
-func replaceRowMacros(row string, n int) string {
-	return indexMacros(row, n)
-}
-
-func unwrapMacro(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, macroOpen)
-	s = strings.TrimSuffix(s, macroClose)
-	return decodeMacroXML(s)
-}
+func replaceRowMacros(row string, n int) string { return new(TemplateProcessor).indexMacros(row, n) }
 
 func xmlEscape(s string) string {
 	return common.EscapeXMLText(common.ControlCharEncode(s))
@@ -356,13 +450,9 @@ func (t *TemplateProcessor) Bytes() ([]byte, error) {
 // SaveAs is an alias for Save (PHPWord).
 func (t *TemplateProcessor) SaveAs(filename string) error { return t.Save(filename) }
 
-func macroRegexp() *regexp.Regexp {
-	return regexp.MustCompile(regexp.QuoteMeta(macroOpen) + `(.+?)` + regexp.QuoteMeta(macroClose))
-}
-
 // GetVariableCount returns placeholder name → occurrence count (PHPWord getVariableCount).
 func (t *TemplateProcessor) GetVariableCount() map[string]int {
-	re := macroRegexp()
+	re := t.macroRegexp()
 	out := map[string]int{}
 	for _, name := range t.xmlParts() {
 		for _, m := range re.FindAllSubmatch(t.files[name], -1) {
@@ -378,7 +468,7 @@ func (t *TemplateProcessor) GetVariableCount() map[string]int {
 
 // GetVariables returns unique placeholder names in first-seen order.
 func (t *TemplateProcessor) GetVariables() []string {
-	re := macroRegexp()
+	re := t.macroRegexp()
 	seen := map[string]struct{}{}
 	var out []string
 	for _, name := range t.xmlParts() {
@@ -413,8 +503,8 @@ func (t *TemplateProcessor) CloneRowAndSetValues(search string, values []map[str
 
 // DeleteRow removes the table row that contains ${search}.
 func (t *TemplateProcessor) DeleteRow(search string) error {
-	search = unwrapMacro(search)
-	needle := macro(search)
+	search = t.unwrapMacro(search)
+	needle := t.macro(search)
 	name := t.mainPart()
 	xml := string(t.files[name])
 	idx := strings.Index(xml, needle)
@@ -442,8 +532,8 @@ func (t *TemplateProcessor) DeleteRow(search string) error {
 
 // SetCheckbox toggles a content-control checkbox at ${search}.
 func (t *TemplateProcessor) SetCheckbox(search string, checked bool) {
-	search = unwrapMacro(search)
-	needle := macro(search)
+	search = t.unwrapMacro(search)
+	needle := t.macro(search)
 	name := t.mainPart()
 	xml := string(t.files[name])
 	start, end := findXMLBlock(xml, needle, "w:sdt")
@@ -493,8 +583,8 @@ func (t *TemplateProcessor) ReplaceCarriageReturns(s string) string {
 
 // ReplaceXmlBlock replaces the XML element of blockType that contains ${macro}.
 func (t *TemplateProcessor) ReplaceXmlBlock(macroName, block, blockType string) error {
-	macroName = unwrapMacro(macroName)
-	needle := macro(macroName)
+	macroName = t.unwrapMacro(macroName)
+	needle := t.macro(macroName)
 	name := t.mainPart()
 	xml := string(t.files[name])
 	start, end := findXMLBlock(xml, needle, blockType)

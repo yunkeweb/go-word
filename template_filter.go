@@ -356,10 +356,10 @@ func (t *TemplateProcessor) applyPipesFor(field string) {
 	if field == "" {
 		return
 	}
-	re := macroRegexp()
+	re := t.macroRegexp()
 	for _, name := range t.xmlParts() {
 		t.files[name] = re.ReplaceAllFunc(t.files[name], func(m []byte) []byte {
-			inner := unwrapMacro(string(m))
+			inner := t.unwrapMacro(string(m))
 			kind, _ := parseControlMacro(inner)
 			if kind != "var" {
 				return m
@@ -379,10 +379,10 @@ func (t *TemplateProcessor) applyPipesFor(field string) {
 }
 
 func (t *TemplateProcessor) applyRemainingPipes() {
-	re := macroRegexp()
+	re := t.macroRegexp()
 	for _, name := range t.xmlParts() {
 		t.files[name] = re.ReplaceAllFunc(t.files[name], func(m []byte) []byte {
-			inner := unwrapMacro(string(m))
+			inner := t.unwrapMacro(string(m))
 			kind, _ := parseControlMacro(inner)
 			if kind != "var" {
 				return m

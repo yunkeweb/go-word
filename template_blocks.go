@@ -51,28 +51,28 @@ func isControlMacro(key string) bool {
 	return kind != "var"
 }
 
-func indexMacros(s string, n int) string {
+func (t *TemplateProcessor) indexMacros(s string, n int) string {
 	idx := "#" + strconv.Itoa(n)
-	return macroRegexp().ReplaceAllStringFunc(s, func(m string) string {
-		raw := unwrapMacro(m)
+	return t.macroRegexp().ReplaceAllStringFunc(s, func(m string) string {
+		raw := t.unwrapMacro(m)
 		kind, ident := parseControlMacro(raw)
 		switch kind {
 		case "endif":
-			return macro(raw + idx)
+			return t.macro(raw + idx)
 		case "if":
 			field, op, val := parseIfExpr(ident)
 			if op != "" {
-				return macro("if " + field + idx + " " + op + " " + quoteIfValue(val))
+				return t.macro("if " + field + idx + " " + op + " " + quoteIfValue(val))
 			}
-			return macro("if " + ident + idx)
+			return t.macro("if " + ident + idx)
 		case "endblock":
-			return macro("/" + ident + idx)
+			return t.macro("/" + ident + idx)
 		default:
 			field, rest := splitFieldRest(ident)
 			if rest != "" {
-				return macro(field + idx + " | " + rest)
+				return t.macro(field + idx + " | " + rest)
 			}
-			return macro(field + idx)
+			return t.macro(field + idx)
 		}
 	})
 }
@@ -95,9 +95,9 @@ func quoteIfValue(val string) string {
 	return val
 }
 
-func findBlockBounds(xml, blockName string) (openStart, openEnd, closeStart, closeEnd int, ok bool) {
-	open := macro(blockName)
-	close := macro("/" + blockName)
+func (t *TemplateProcessor) findBlockBounds(xml, blockName string) (openStart, openEnd, closeStart, closeEnd int, ok bool) {
+	open := t.macro(blockName)
+	close := t.macro("/" + blockName)
 	openStart = strings.Index(xml, open)
 	if openStart < 0 {
 		return
@@ -175,7 +175,7 @@ func (t *TemplateProcessor) CloneNestedBlock(blockName string, items []BlockData
 
 // SetCondition keeps or clips ${if name}...${endif}.
 func (t *TemplateProcessor) SetCondition(name string, keep bool) error {
-	name = strings.TrimSpace(unwrapMacro(name))
+	name = strings.TrimSpace(t.unwrapMacro(name))
 	if strings.HasPrefix(name, "if ") || strings.HasPrefix(name, "if\t") {
 		name = strings.TrimSpace(name[2:])
 	}
@@ -183,7 +183,7 @@ func (t *TemplateProcessor) SetCondition(name string, keep bool) error {
 	for _, part := range t.xmlParts() {
 		for {
 			xml := string(t.files[part])
-			p, ok := findIfPair(xml, name)
+			p, ok := t.findIfPair(xml, name)
 			if !ok {
 				break
 			}
@@ -231,7 +231,7 @@ func (t *TemplateProcessor) applyRemainingIfBlocks() {
 	for _, part := range t.xmlParts() {
 		for {
 			xml := string(t.files[part])
-			p, ok := innermostIfPair(xml)
+			p, ok := t.innermostIfPair(xml)
 			if !ok {
 				break
 			}
@@ -240,11 +240,11 @@ func (t *TemplateProcessor) applyRemainingIfBlocks() {
 	}
 }
 
-func scanMacros(xml string) []macroTok {
-	locs := macroRegexp().FindAllStringSubmatchIndex(xml, -1)
+func (t *TemplateProcessor) scanMacros(xml string) []macroTok {
+	locs := t.macroRegexp().FindAllStringSubmatchIndex(xml, -1)
 	out := make([]macroTok, 0, len(locs))
 	for _, loc := range locs {
-		key := unwrapMacro(xml[loc[0]:loc[1]])
+		key := t.unwrapMacro(xml[loc[0]:loc[1]])
 		kind, name := parseControlMacro(key)
 		if kind == "var" {
 			name = key
@@ -254,8 +254,8 @@ func scanMacros(xml string) []macroTok {
 	return out
 }
 
-func findIfPair(xml, condName string) (ifPair, bool) {
-	toks := scanMacros(xml)
+func (t *TemplateProcessor) findIfPair(xml, condName string) (ifPair, bool) {
+	toks := t.scanMacros(xml)
 	for i, tok := range toks {
 		if tok.kind != "if" || tok.name != condName {
 			continue
@@ -282,8 +282,8 @@ func findIfPair(xml, condName string) (ifPair, bool) {
 	return ifPair{}, false
 }
 
-func innermostIfPair(xml string) (ifPair, bool) {
-	toks := scanMacros(xml)
+func (t *TemplateProcessor) innermostIfPair(xml string) (ifPair, bool) {
+	toks := t.scanMacros(xml)
 	type frame struct {
 		name string
 		s, e int

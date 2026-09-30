@@ -246,7 +246,7 @@ func TestTemplateCloneRowMacros(t *testing.T) {
 }
 
 func TestUnwrapMacroAndXmlEscape(t *testing.T) {
-	if unwrapMacro(" ${x} ") != "x" {
+	if new(TemplateProcessor).unwrapMacro(" ${x} ") != "x" {
 		t.Fatal("unwrap")
 	}
 	s := xmlEscape(`a&b<c>"`)
