@@ -96,9 +96,28 @@ func CreateWriter(doc *Document, name string) (Writer, error)
 func CreateReader(name string) (Reader, error)
 func Load(filename string, readerName ...string) (*Document, error)
 func Open(filePath string) (*Document, error)
+func LoadWithOptions(filename string, opts ReadOptions) (*Document, error)
+func OpenWithOptions(filePath string, opts ReadOptions) (*Document, error)
+func ReadWithOptions(r io.Reader, opts ReadOptions) (*Document, error)
+func LoadBytesWithOptions(data []byte, opts ReadOptions) (*Document, error)
 ```
 
 `name` is `"Word2007"` (the default). `Load` / `Open` build a full DOM; for O(1) text extraction see [Streaming Parser](./streaming).
+
+Use the `WithOptions` variants for untrusted ZIP input. `ReadOptions` caps the
+compressed archive, each uncompressed member, the declared package total, and
+the number of entries. Zero disables a limit; negative fields are rejected
+before I/O. Exceeding a limit returns `ErrReadLimitExceeded`.
+
+`MaxArchiveSize` and `MaxPartSize` are byte limits. `MaxTotalSize` is the
+sum of declared uncompressed ZIP members, and `MaxEntries` counts ZIP members.
+The options apply to one call and do not change legacy unbounded functions.
+Template input has matching constructors:
+
+```go
+func NewTemplateProcessorWithOptions(filename string, opts ReadOptions) (*TemplateProcessor, error)
+func NewTemplateProcessorBytesWithOptions(data []byte, opts ReadOptions) (*TemplateProcessor, error)
+```
 
 ## Next
 

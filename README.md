@@ -22,6 +22,7 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 - **Document Merger** — `AppendDocument` clones source sections and remaps colliding style IDs, bookmark names, and image `rId` / media parts so several `.docx` trees splice without resource clashes.
 - **DrawingML & Charts** — bar, column, line, pie, area, stacked, and dual-axis combo charts, plus vector shapes and text boxes (`wps:wsp`, `w:txbxContent`) with fill, outline, and inner text.
 - **Streaming Parser** — `StreamExtractText` / `StreamExtractImages` walk a `.docx` ZIP with \(O(1)\) extra memory, emitting paragraphs and pictures as they are read.
+- **Bounded ZIP reads** — `ReadOptions` limits archive bytes, uncompressed part size, total declared expansion, and entry count through additive `WithOptions` APIs; zero keeps legacy unlimited behavior.
 - **Template Engine v2** — `${variable}` placeholders, nested `${block}` loops, binary `${if}` / `${endif}` clipping, and chained `${var | pipe}` filters (`formatDate`, `formatCurrency`, `trim`, `upper`, `lower`, `truncate`, `default`).
 - **Advanced Layout** — mixed portrait/landscape sections, multi-column layout (`w:cols`), automatic TOC, VML watermarks, and read-only document protection.
 
@@ -95,6 +96,7 @@ Runnable samples:
 | [`examples/v0.9.0_table_advanced`](examples/v0.9.0_table_advanced) | `tblHeader`, `cantSplit`, `vAlign`, `textDirection` |
 | [`examples/v0.9.0_watermark_security`](examples/v0.9.0_watermark_security) | Tiled text watermark, image washout, `AllowEdit` |
 | [`examples/v0.8.0_demo`](examples/v0.8.0_demo) | OMML, DrawingML shapes, columns, `AppendDocument` |
+| [`examples/read_limits`](examples/read_limits) | Bounded ZIP reads with `ReadOptions` |
 | [`examples/simple`](examples/simple) | Styles, titles, and a first `.docx` |
 
 API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word). Site: [yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/).

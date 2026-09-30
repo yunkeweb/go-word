@@ -9,6 +9,8 @@
 ```go
 func NewTemplateProcessor(filename string) (*TemplateProcessor, error)
 func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error)
+func NewTemplateProcessorWithOptions(filename string, opts ReadOptions) (*TemplateProcessor, error)
+func NewTemplateProcessorBytesWithOptions(data []byte, opts ReadOptions) (*TemplateProcessor, error)
 func (t *TemplateProcessor) SetValue(search, replace string)
 func (t *TemplateProcessor) SetValues(values map[string]string)
 func (t *TemplateProcessor) Save(filename string) error
@@ -16,6 +18,11 @@ func (t *TemplateProcessor) Bytes() ([]byte, error)
 ```
 
 Keep each `${...}` inside a single `w:t`. If Word splits a placeholder across runs, the processor will not see the token.
+
+The `WithOptions` constructors accept the same file path or byte slice plus
+per-call `ReadOptions`. All template members count toward the budgets. See
+[ZIP budgets and a runnable example](./streaming#optional-zip-budgets) for fields,
+error handling, and limits.
 
 ## Pipe filters
 

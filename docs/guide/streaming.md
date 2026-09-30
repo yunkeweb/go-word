@@ -11,6 +11,10 @@
 ```go
 func StreamExtractText(r io.Reader, fn func(paragraphText string) error) error
 func StreamExtractImages(r io.Reader, fn func(img ImageFile) error) error
+func StreamExtractTextWithOptions(r io.Reader, fn func(string) error, opts ReadOptions) error
+func StreamExtractImagesWithOptions(r io.Reader, fn func(ImageFile) error, opts ReadOptions) error
+func (d *Document) StreamExtractTextWithOptions(r io.Reader, fn func(string) error, opts ReadOptions) error
+func (d *Document) StreamExtractImagesWithOptions(r io.Reader, fn func(ImageFile) error, opts ReadOptions) error
 ```
 
 ### Parameters
@@ -19,8 +23,91 @@ func StreamExtractImages(r io.Reader, fn func(img ImageFile) error) error
 | --- | --- | --- |
 | `r` | `io.Reader` | `.docx` bytes. `*os.File` is preferred. |
 | `fn` | callback | Return a non-nil error to stop the scan. |
+| `opts` | `ReadOptions` | Per-call ZIP budgets for the `WithOptions` variants. |
 
 `ImageFile` fields: `Name` (ZIP path), `MIME`, `Data`. Images are resolved through `a:blip r:embed` and VML `imagedata` via `word/_rels/document.xml.rels`.
+
+### Optional ZIP budgets
+
+Use additive `WithOptions` APIs when the package is not trusted:
+
+| Field | Type | Limit |
+| --- | --- | --- |
+| `MaxArchiveSize` | `int64` | Compressed archive bytes. |
+| `MaxPartSize` | `int64` | Uncompressed bytes in a single ZIP member. |
+| `MaxTotalSize` | `int64` | Sum of declared uncompressed sizes, including unused members. |
+| `MaxEntries` | `int` | Number of ZIP members, including directory entries. |
+
+```go
+opts := word.ReadOptions{
+    MaxArchiveSize: 32 << 20,
+    MaxPartSize:    16 << 20,
+    MaxTotalSize:   64 << 20,
+    MaxEntries:     512,
+}
+doc, err := word.ReadWithOptions(input, opts)
+if errors.Is(err, word.ErrReadLimitExceeded) {
+    // Reject the package according to your input policy.
+}
+```
+
+The same options are accepted by `LoadWithOptions`, `OpenWithOptions`,
+`LoadBytesWithOptions`, both template constructors, and both stream extractors.
+Zero disables an individual limit; negative values return `ErrInvalidReadOptions`
+before reading. Exact limits are accepted. Use `errors.Is` to recognize either
+`ErrInvalidReadOptions` or `ErrReadLimitExceeded`. Declared sizes are checked
+before decompression; actual member reads are bounded as well, and ZIP checksum
+and format errors are preserved.
+The budgets protect ZIP input and declared decompressed parts, not DOM memory or
+CPU. Streaming callbacks may have observed earlier paragraphs before a later
+part fails.
+
+Complete bounded-read example:
+
+```go
+package main
+
+import (
+    "bytes"
+    "errors"
+    "fmt"
+    "log"
+
+    "github.com/yunkeweb/go-word"
+)
+
+func main() {
+    source := word.New()
+    source.AddSection().AddText("bounded input")
+    raw, err := source.Bytes()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    opts := word.ReadOptions{MaxArchiveSize: 8 << 20, MaxPartSize: 4 << 20, MaxTotalSize: 16 << 20, MaxEntries: 256}
+    if _, err := word.ReadWithOptions(bytes.NewReader(raw), opts); err != nil {
+        if errors.Is(err, word.ErrReadLimitExceeded) {
+            log.Fatal("document exceeds the configured ZIP budget")
+        }
+        log.Fatal(err)
+    }
+
+    paragraphs := 0
+    err = word.StreamExtractTextWithOptions(bytes.NewReader(raw), func(text string) error {
+        if text != "" {
+            paragraphs++
+        }
+        return nil
+    }, opts)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("read %d paragraph(s) under the configured budget\n", paragraphs)
+}
+```
+
+Run the repository example with `go run ./examples/read_limits`. Its limits are
+illustrative; choose all four budgets for your expected inputs.
 
 ## NewStreamWriter
 

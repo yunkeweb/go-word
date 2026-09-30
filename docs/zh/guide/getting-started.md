@@ -96,9 +96,26 @@ func CreateWriter(doc *Document, name string) (Writer, error)
 func CreateReader(name string) (Reader, error)
 func Load(filename string, readerName ...string) (*Document, error)
 func Open(filePath string) (*Document, error)
+func LoadWithOptions(filename string, opts ReadOptions) (*Document, error)
+func OpenWithOptions(filePath string, opts ReadOptions) (*Document, error)
+func ReadWithOptions(r io.Reader, opts ReadOptions) (*Document, error)
+func LoadBytesWithOptions(data []byte, opts ReadOptions) (*Document, error)
 ```
 
 `name` 为 `"Word2007"`（默认）。`Load` / `Open` 构建完整 DOM；O(1) 抽文本见 [流式解析器](./streaming)。
+
+处理不可信 ZIP 时使用 `WithOptions` 入口。`ReadOptions` 可限制压缩包大小、
+单个解压部件大小、声明的解压总量以及条目数。字段为 0 表示关闭限制，负数会在
+执行 I/O 前拒绝；超限返回 `ErrReadLimitExceeded`。
+
+`MaxArchiveSize` 与 `MaxPartSize` 的单位是字节；`MaxTotalSize` 是 ZIP 部件声明的
+解压大小总和；`MaxEntries` 统计 ZIP 条目数。选项只对当前调用生效，不改变旧的
+无限制函数。读取模板时使用对应构造函数：
+
+```go
+func NewTemplateProcessorWithOptions(filename string, opts ReadOptions) (*TemplateProcessor, error)
+func NewTemplateProcessorBytesWithOptions(data []byte, opts ReadOptions) (*TemplateProcessor, error)
+```
 
 ## 下一步
 

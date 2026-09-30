@@ -11,6 +11,10 @@
 ```go
 func StreamExtractText(r io.Reader, fn func(paragraphText string) error) error
 func StreamExtractImages(r io.Reader, fn func(img ImageFile) error) error
+func StreamExtractTextWithOptions(r io.Reader, fn func(string) error, opts ReadOptions) error
+func StreamExtractImagesWithOptions(r io.Reader, fn func(ImageFile) error, opts ReadOptions) error
+func (d *Document) StreamExtractTextWithOptions(r io.Reader, fn func(string) error, opts ReadOptions) error
+func (d *Document) StreamExtractImagesWithOptions(r io.Reader, fn func(ImageFile) error, opts ReadOptions) error
 ```
 
 ### 参数
@@ -19,8 +23,91 @@ func StreamExtractImages(r io.Reader, fn func(img ImageFile) error) error
 | --- | --- | --- |
 | `r` | `io.Reader` | `.docx` 字节。优先 `*os.File`。 |
 | `fn` | 回调 | 返回非 nil error 即停止扫描。 |
+| `opts` | `ReadOptions` | `WithOptions` 入口的单次 ZIP 预算。 |
 
 `ImageFile` 字段：`Name`（ZIP 路径）、`MIME`、`Data`。图片经 `a:blip r:embed` 与 VML `imagedata`，通过 `word/_rels/document.xml.rels` 解析。
+
+### 可选 ZIP 预算
+
+处理不可信文档时，可使用新增的 `WithOptions` 入口：
+
+`opts` 为单次调用的 `ReadOptions`，各字段含义如下：
+
+| 字段 | 类型 | 限制 |
+| --- | --- | --- |
+| `MaxArchiveSize` | `int64` | 压缩包字节数。 |
+| `MaxPartSize` | `int64` | 单个 ZIP 部件的解压字节数。 |
+| `MaxTotalSize` | `int64` | 所有部件声明的解压大小之和，包含未使用的部件。 |
+| `MaxEntries` | `int` | ZIP 条目数，包含目录条目。 |
+
+```go
+opts := word.ReadOptions{
+    MaxArchiveSize: 32 << 20,
+    MaxPartSize:    16 << 20,
+    MaxTotalSize:   64 << 20,
+    MaxEntries:     512,
+}
+doc, err := word.ReadWithOptions(input, opts)
+if errors.Is(err, word.ErrReadLimitExceeded) {
+    // 按输入策略拒绝文档。
+}
+```
+
+同一选项也适用于 `LoadWithOptions`、`OpenWithOptions`、
+`LoadBytesWithOptions`、两个模板构造函数和两个流式提取入口。
+单项值为 0 表示关闭限制；负数会在读取前返回 `ErrInvalidReadOptions`，恰好等于
+上限的输入允许通过。可用 `errors.Is` 判断 `ErrInvalidReadOptions` 与
+`ErrReadLimitExceeded`。解压前检查声明大小，实际部件读取也受上限约束，
+并保留 ZIP 校验和及格式错误。预算限制 ZIP 输入和声明的
+解压部件大小，不会限制 DOM 内存或 CPU；流式回调可能已经收到前面的段落，
+之后才发现部件超限。
+
+完整的预算读取示例：
+
+```go
+package main
+
+import (
+    "bytes"
+    "errors"
+    "fmt"
+    "log"
+
+    "github.com/yunkeweb/go-word"
+)
+
+func main() {
+    source := word.New()
+    source.AddSection().AddText("bounded input")
+    raw, err := source.Bytes()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    opts := word.ReadOptions{MaxArchiveSize: 8 << 20, MaxPartSize: 4 << 20, MaxTotalSize: 16 << 20, MaxEntries: 256}
+    if _, err := word.ReadWithOptions(bytes.NewReader(raw), opts); err != nil {
+        if errors.Is(err, word.ErrReadLimitExceeded) {
+            log.Fatal("document exceeds the configured ZIP budget")
+        }
+        log.Fatal(err)
+    }
+
+    paragraphs := 0
+    err = word.StreamExtractTextWithOptions(bytes.NewReader(raw), func(text string) error {
+        if text != "" {
+            paragraphs++
+        }
+        return nil
+    }, opts)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("read %d paragraph(s) under the configured budget\n", paragraphs)
+}
+```
+
+在仓库根目录执行 `go run ./examples/read_limits` 可运行示例。示例中的数值仅供
+演示，处理不可信输入时请根据业务文档大小同时配置四项预算。
 
 ## NewStreamWriter
 

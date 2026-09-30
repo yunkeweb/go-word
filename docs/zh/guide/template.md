@@ -9,6 +9,8 @@
 ```go
 func NewTemplateProcessor(filename string) (*TemplateProcessor, error)
 func NewTemplateProcessorBytes(data []byte) (*TemplateProcessor, error)
+func NewTemplateProcessorWithOptions(filename string, opts ReadOptions) (*TemplateProcessor, error)
+func NewTemplateProcessorBytesWithOptions(data []byte, opts ReadOptions) (*TemplateProcessor, error)
 func (t *TemplateProcessor) SetValue(search, replace string)
 func (t *TemplateProcessor) SetValues(values map[string]string)
 func (t *TemplateProcessor) Save(filename string) error
@@ -16,6 +18,10 @@ func (t *TemplateProcessor) Bytes() ([]byte, error)
 ```
 
 每个 `${...}` 应落在同一个 `w:t`。若 Word 把占位符拆到多个 run，处理器就看不到 token。
+
+`WithOptions` 构造函数接收相同的文件路径或字节切片，并额外接收单次调用的
+`ReadOptions`。所有模板部件都计入预算。字段、错误处理与边界说明见
+[ZIP 预算与可运行示例](./streaming)。
 
 ## Pipe 过滤器
 

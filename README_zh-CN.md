@@ -22,6 +22,7 @@
 - **Document Merger（无损文档合并）** — `AppendDocument` 克隆源节，并重映射冲突的样式 ID、书签名以及图片 `rId` / 媒体部件，多份文档拼接后资源彼此隔离。
 - **DrawingML & Charts** — 柱状、条形、折线、饼图、面积图、堆叠图与双轴组合图，以及矢量形状与文本框（`wps:wsp`、`w:txbxContent`），支持填充、边框与内嵌文字。
 - **Streaming Parser（流式解析）** — `StreamExtractText` / `StreamExtractImages` 以 \(O(1)\) 额外内存遍历 `.docx` ZIP，边读边输出段落文本与图片。
+- **可控 ZIP 读取预算** — `ReadOptions` 可限制压缩包大小、单部件解压大小、声明的解压总量和条目数；通过新增 `WithOptions` API 启用，值为 0 时保持旧接口的无限制行为。
 - **Template Engine v2** — `${variable}` 占位符、嵌套 `${block}` 循环、二元比较 `${if}` / `${endif}`，以及 `${var | pipe}` 链式过滤器（`formatDate`、`formatCurrency`、`trim`、`upper`、`lower`、`truncate`、`default`）。
 - **Advanced Layout（高级排版）** — 多节横纵向混排、多栏排版（`w:cols`）、TOC 自动目录、VML 水印与只读文档保护。
 
@@ -95,6 +96,7 @@ func main() {
 | [`examples/v0.9.0_table_advanced`](examples/v0.9.0_table_advanced) | `tblHeader`、`cantSplit`、`vAlign`、`textDirection` |
 | [`examples/v0.9.0_watermark_security`](examples/v0.9.0_watermark_security) | 平铺文字水印、图片洗白、`AllowEdit` |
 | [`examples/v0.8.0_demo`](examples/v0.8.0_demo) | OMML、DrawingML 形状、分栏、`AppendDocument` |
+| [`examples/read_limits`](examples/read_limits) | 使用 `ReadOptions` 设置 ZIP 读取预算 |
 | [`examples/simple`](examples/simple) | 样式、标题与第一份 `.docx` |
 
 包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。站点：[yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/zh/)。
