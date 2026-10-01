@@ -2,6 +2,8 @@ package word
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -303,4 +305,47 @@ func BenchmarkRenderHTMLLargeDocument(b *testing.B) {
 		}
 		htmlBenchmarkSink = got
 	}
+}
+
+func TestWriteHTMLMatchesBufferedRender(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddTitle("stream", 1)
+	sec.AddText("streamed output")
+	want, err := doc.RenderHTML(HTMLOptions{Standalone: true, IncludeCSS: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := doc.WriteHTML(&out, HTMLOptions{Standalone: true, IncludeCSS: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(want, out.Bytes()) {
+		t.Fatalf("stream output differs from buffered output\nwant=%s\ngot=%s", want, out.Bytes())
+	}
+}
+
+func TestWriteHTMLPropagatesWriterErrors(t *testing.T) {
+	doc := New()
+	doc.AddSection().AddText("writer failure")
+	wantErr := errors.New("sink failed")
+	if err := doc.WriteHTML(errorHTMLWriter{err: wantErr}, HTMLOptions{}); !errors.Is(err, wantErr) {
+		t.Fatalf("error=%v, want %v", err, wantErr)
+	}
+	if err := doc.WriteHTML(shortHTMLWriter{}, HTMLOptions{}); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("short write error=%v", err)
+	}
+}
+
+type errorHTMLWriter struct{ err error }
+
+func (w errorHTMLWriter) Write([]byte) (int, error) { return 0, w.err }
+
+type shortHTMLWriter struct{}
+
+func (shortHTMLWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return len(p) - 1, nil
 }

@@ -70,9 +70,13 @@ func (d *Document) RenderHTMLWithDiagnostics(opts HTMLOptions) (HTMLRenderResult
 	if d == nil {
 		return HTMLRenderResult{}, fmt.Errorf("word: nil document")
 	}
-	r := &htmlRenderer{opts: normalizeHTMLOptions(opts)}
+	var buf bytes.Buffer
+	r := newHTMLRenderer(&buf, opts)
 	r.renderDocument(d)
-	result := HTMLRenderResult{HTML: append([]byte(nil), r.buf.Bytes()...), Diagnostics: append([]HTMLDiagnostic(nil), r.diagnostics...)}
+	result := HTMLRenderResult{HTML: append([]byte(nil), buf.Bytes()...), Diagnostics: append([]HTMLDiagnostic(nil), r.diagnostics...)}
+	if r.err != nil {
+		return result, r.err
+	}
 	if r.opts.Strict && len(r.diagnostics) > 0 {
 		return result, &HTMLUnsupportedError{Diagnostics: result.Diagnostics}
 	}
@@ -120,12 +124,18 @@ func (d *Document) WriteHTML(w io.Writer, opts HTMLOptions) error {
 	if w == nil {
 		return fmt.Errorf("word: nil HTML writer")
 	}
-	b, err := d.RenderHTML(opts)
-	if err != nil {
-		return err
+	if d == nil {
+		return fmt.Errorf("word: nil document")
 	}
-	_, err = w.Write(b)
-	return err
+	r := newHTMLRenderer(w, opts)
+	r.renderDocument(d)
+	if r.err != nil {
+		return r.err
+	}
+	if r.opts.Strict && len(r.diagnostics) > 0 {
+		return &HTMLUnsupportedError{Diagnostics: append([]HTMLDiagnostic(nil), r.diagnostics...)}
+	}
+	return nil
 }
 
 func normalizeHTMLOptions(opts HTMLOptions) HTMLOptions {
@@ -137,15 +147,20 @@ func normalizeHTMLOptions(opts HTMLOptions) HTMLOptions {
 
 type htmlRenderer struct {
 	opts        HTMLOptions
-	buf         bytes.Buffer
+	out         io.Writer
+	err         error
 	diagnostics []HTMLDiagnostic
+}
+
+func newHTMLRenderer(out io.Writer, opts HTMLOptions) *htmlRenderer {
+	return &htmlRenderer{opts: normalizeHTMLOptions(opts), out: out}
 }
 
 type htmlAttr struct{ name, value string }
 
 func (r *htmlRenderer) renderDocument(d *Document) {
 	if r.opts.Standalone {
-		r.buf.WriteString("<!doctype html><html><head><meta charset=\"utf-8\">")
+		r.writeString("<!doctype html><html><head><meta charset=\"utf-8\">")
 		title := r.opts.Title
 		if title == "" && d.info != nil {
 			title = d.info.Title
@@ -154,11 +169,11 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 			r.tagText("title", title)
 		}
 		if r.opts.IncludeCSS {
-			r.buf.WriteString("<style>")
-			r.buf.WriteString(defaultHTMLCSS)
-			r.buf.WriteString("</style>")
+			r.writeString("<style>")
+			r.writeString(defaultHTMLCSS)
+			r.writeString("</style>")
 		}
-		r.buf.WriteString("</head><body>")
+		r.writeString("</head><body>")
 	}
 	for _, sec := range d.sections {
 		if sec == nil {
@@ -181,7 +196,7 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 		}
 	}
 	if r.opts.Standalone {
-		r.buf.WriteString("</body></html>")
+		r.writeString("</body></html>")
 	}
 }
 
@@ -522,10 +537,10 @@ func (r *htmlRenderer) unsupported(el element.Element, msg string) {
 	r.close("span")
 }
 func (r *htmlRenderer) open(name string, attrs ...htmlAttr) {
-	r.buf.WriteByte('<')
-	r.buf.WriteString(name)
+	r.writeString("<")
+	r.writeString(name)
 	r.writeAttrs(attrs)
-	r.buf.WriteByte('>')
+	r.writeString(">")
 }
 func (r *htmlRenderer) openStyled(name, css string) {
 	if css == "" {
@@ -535,24 +550,20 @@ func (r *htmlRenderer) openStyled(name, css string) {
 	}
 }
 func (r *htmlRenderer) void(name string, attrs ...htmlAttr) {
-	r.buf.WriteByte('<')
-	r.buf.WriteString(name)
+	r.writeString("<")
+	r.writeString(name)
 	r.writeAttrs(attrs)
-	r.buf.WriteString(">")
+	r.writeString(">")
 }
-func (r *htmlRenderer) close(name string)      { r.buf.WriteString("</" + name + ">") }
-func (r *htmlRenderer) text(s string)          { r.buf.WriteString(html.EscapeString(s)) }
+func (r *htmlRenderer) close(name string)      { r.writeString("</" + name + ">") }
+func (r *htmlRenderer) text(s string)          { r.writeString(html.EscapeString(s)) }
 func (r *htmlRenderer) tagText(name, s string) { r.open(name); r.text(s); r.close(name) }
 func (r *htmlRenderer) writeAttrs(attrs []htmlAttr) {
 	for _, a := range attrs {
 		if a.name == "" {
 			continue
 		}
-		r.buf.WriteByte(' ')
-		r.buf.WriteString(a.name)
-		r.buf.WriteString("=\"")
-		r.buf.WriteString(html.EscapeString(a.value))
-		r.buf.WriteByte('"')
+		r.writeString(" " + a.name + "=\"" + html.EscapeString(a.value) + "\"")
 	}
 }
 
@@ -783,3 +794,17 @@ func safeURL(s string) bool {
 }
 
 const defaultHTMLCSS = ".goword-page-break{break-before:page;height:0}.goword-unsupported{color:#a00;font-style:italic}.goword-comment,.goword-footnote,.goword-endnote{margin:.5em 0;padding:.4em;border-left:3px solid #aaa}.goword-textbox,.goword-shape{padding:.25em}"
+
+func (r *htmlRenderer) writeString(s string) {
+	if r.err != nil || len(s) == 0 {
+		return
+	}
+	n, err := io.WriteString(r.out, s)
+	if err != nil {
+		r.err = err
+		return
+	}
+	if n != len(s) {
+		r.err = io.ErrShortWrite
+	}
+}
