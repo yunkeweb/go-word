@@ -56,6 +56,21 @@ func ValidatePackage(data []byte) []PackageDiagnostic {
 			validateRelationships(raw, name, parts, add)
 		}
 	}
+	for _, f := range zr.File {
+		name := path.Clean(strings.ReplaceAll(f.Name, "\\", "/"))
+		if !strings.HasPrefix(name, "word/") || !strings.HasSuffix(strings.ToLower(name), ".xml") || strings.HasSuffix(name, ".rels") {
+			continue
+		}
+		r, err := f.Open()
+		if err != nil {
+			continue
+		}
+		raw, err := io.ReadAll(r)
+		_ = r.Close()
+		if err == nil {
+			validateUnsupportedDrawings(raw, name, add)
+		}
+	}
 	if !parts["word/document.xml"] {
 		add("error", "missing_document", "word/document.xml", "document part is missing")
 	} else {
@@ -67,7 +82,6 @@ func ValidatePackage(data []byte) []PackageDiagnostic {
 			raw, _ := io.ReadAll(r)
 			_ = r.Close()
 			validateDocumentAnchors(raw, add)
-			validateUnsupportedDrawings(raw, "word/document.xml", add)
 		}
 	}
 	return out
@@ -97,7 +111,7 @@ func validateUnsupportedDrawings(data []byte, part string, add func(string, stri
 			unsupported = local
 		}
 		if unsupported != "" && !warned {
-			add("warning", "unsupported_drawing", part, fmt.Sprintf("drawing type %s is preserved only as package XML", unsupported))
+			add("warning", "unsupported_drawing", part, fmt.Sprintf("drawing type %s is not modeled by the DOM", unsupported))
 			warned = true
 		}
 	}
