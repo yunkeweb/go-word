@@ -77,13 +77,13 @@ func (d *Document) mergeStyles(src *Document, prefix string) (map[string]string,
 	destNumbering := 0
 	for _, s := range d.styles {
 		have[s.Name] = true
-		if s.Kind == "numbering" {
+		if s.Kind == "numbering" && s.Numbering != nil {
 			destNumbering++
 		}
 	}
 	srcNumbering := 0
 	for _, s := range src.styles {
-		if s.Kind == "numbering" {
+		if s.Kind == "numbering" && s.Numbering != nil {
 			srcNumbering++
 			numberingMap[2+srcNumbering] = 2 + destNumbering + srcNumbering
 		}

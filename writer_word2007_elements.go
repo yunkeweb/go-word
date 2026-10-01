@@ -391,7 +391,7 @@ func (w *word2007Writer) writeNumPr(xw *common.XMLWriter, list any, depth int) {
 func (w *word2007Writer) numberingID(name string) int {
 	id := 3
 	for _, ns := range w.doc.styles {
-		if ns.Kind != "numbering" {
+		if ns.Kind != "numbering" || ns.Numbering == nil {
 			continue
 		}
 		if ns.Name == name {

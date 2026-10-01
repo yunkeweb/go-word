@@ -90,12 +90,14 @@ func TestAppendDocumentNilSource(t *testing.T) {
 
 func TestAppendDocumentRemapsNumberingStylesAndIDs(t *testing.T) {
 	dst := New()
+	dst.AddNumberingStyle("placeholder", nil)
 	dst.AddNumberingStyle("outline", style.Numbering{Type: "multilevel", Levels: []style.NumberingLevel{{Format: style.NumberDecimal}}})
 	dst.AddNumberingStyle("destOnly", style.Numbering{Levels: []style.NumberingLevel{{Format: style.NumberLowerLetter}}})
 	dstSec := dst.AddSection()
 	dstSec.AddListItem("destination", 0, nil, nil, "outline")
 
 	src := New()
+	src.AddNumberingStyle("placeholder", nil)
 	src.AddNumberingStyle("outline", style.Numbering{Type: "multilevel", Levels: []style.NumberingLevel{{Format: style.NumberUpperRoman}}})
 	src.AddNumberingStyle("srcOnly", style.Numbering{Levels: []style.NumberingLevel{{Format: style.NumberLowerRoman}}})
 	srcSec := src.AddSection()
