@@ -67,6 +67,25 @@ func main() {
 }
 ```
 
+## 测试与 race 检测器
+
+普通构建和测试保持纯 Go，不需要启用 CGO：
+
+```sh
+go test ./...
+go build ./...
+```
+
+race 检测器只在测试时需要额外的 C 编译器。它不会给依赖 GoWord 的应用增加运行时 CGO 依赖。Windows 下的 Visual Studio 提供 MSVC（`cl.exe`）和可选的 LLVM/Clang，但不会安装 GCC。为了更稳定地运行 Go race，建议安装 MSYS2 的 UCRT64 MinGW-w64 GCC 工具链，将 `C:\msys64\ucrt64\bin` 加入 `PATH`，然后执行：
+
+```powershell
+$env:CGO_ENABLED = "1"
+$env:CC = "gcc"
+go test -race ./... -count=1
+```
+
+如果只使用 GoWord 库，普通构建和测试保持 `CGO_ENABLED=0` 即可。GitHub Actions 可以在 `ubuntu-latest` 上执行同样的检查，该 runner 默认提供 GCC。
+
 ## 下一步
 
 [快速开始](./getting-started) 会走一遍公式、形状与双栏。[架构设计](./architecture) 说明 ZIP 包如何组装。

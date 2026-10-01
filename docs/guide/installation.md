@@ -67,6 +67,25 @@ func main() {
 }
 ```
 
+## Test and race detector
+
+Normal builds and tests stay pure Go and do not require CGO:
+
+```sh
+go test ./...
+go build ./...
+```
+
+The race detector is a separate test-time requirement. It enables CGO and needs a C compiler; it does not add a CGO dependency to applications that import GoWord. On Windows, Visual Studio provides MSVC (`cl.exe`) and optional LLVM/Clang, but it does not install GCC. For the most predictable Go race setup, install the MSYS2 UCRT64 MinGW-w64 GCC toolchain, add `C:\msys64\ucrt64\bin` to `PATH`, and run:
+
+```powershell
+$env:CGO_ENABLED = "1"
+$env:CC = "gcc"
+go test -race ./... -count=1
+```
+
+If you only need the library, keep `CGO_ENABLED=0` for regular builds and tests. GitHub Actions can run the same check on `ubuntu-latest`, where GCC is available by default.
+
 ## Next
 
 [Quick Start](./getting-started) walks through formulas, shapes, and two-column layout. [Architecture](./architecture) explains how the ZIP package is assembled.
