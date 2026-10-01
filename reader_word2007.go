@@ -24,6 +24,12 @@ type documentRelationship struct {
 	Type   string
 }
 
+type documentImage struct {
+	Name   string
+	Target string
+	Data   []byte
+}
+
 func (word2007Reader) Load(filename string) (*Document, error) {
 	zr, err := common.OpenZipFile(filename)
 	if err != nil {
@@ -73,6 +79,21 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, e
 	}
+	images := map[string]documentImage{}
+	for id, rel := range rels {
+		if !strings.HasSuffix(rel.Type, "/image") || strings.Contains(rel.Target, "://") {
+			continue
+		}
+		target := path.Clean(path.Join("word", rel.Target))
+		data, e := zr.ReadFileWithLimit(target, opts.partLimit())
+		if e != nil {
+			if errors.Is(e, os.ErrNotExist) {
+				continue
+			}
+			return nil, e
+		}
+		images[id] = documentImage{Name: path.Base(target), Target: target, Data: data}
+	}
 	sections, err := parseDocumentSections(raw)
 	if err != nil {
 		return nil, err
@@ -82,7 +103,7 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	}
 	for _, parsed := range sections {
 		sec := doc.AddSection(parsed.style)
-		if err := parseDocumentXMLRels(parsed.body, sec, relationshipTargets(rels), listStyles); err != nil {
+		if err := parseDocumentXMLRelsImages(parsed.body, sec, relationshipTargets(rels), listStyles, images); err != nil {
 			return nil, err
 		}
 		if err := loadSectionParts(zr, opts, sec, parsed.sectPr, rels); err != nil {
@@ -505,6 +526,10 @@ type tblFrame struct {
 }
 
 func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]style.ListItem) error {
+	return parseDocumentXMLRelsImages(data, sec, rels, listStyles, nil)
+}
+
+func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]style.ListItem, images map[string]documentImage) error {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
 		frames        []tblFrame
@@ -803,7 +828,21 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 						sec.AddPageBreak()
 					}
 				}
-			case "drawing", "sectPr":
+			case "drawing":
+				rid, width, height, alt := parseDrawing(dec)
+				if img, ok := images[rid]; ok {
+					st := style.Image{WidthEMU: width, HeightEMU: height, AltText: alt}
+					if width > 0 {
+						st.Width = common.EMUToPixel(width)
+					}
+					if height > 0 {
+						st.Height = common.EMUToPixel(height)
+					}
+					out := currentRun().AddImageBytes(img.Name, img.Data, st)
+					out.Media.Target = img.Target
+					out.Media.Ext = strings.TrimPrefix(strings.ToLower(path.Ext(img.Name)), ".")
+				}
+			case "sectPr":
 				if err := skip(dec, t); err != nil {
 					return err
 				}
@@ -836,6 +875,36 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 		}
 	}
 	return nil
+}
+
+func parseDrawing(dec *xml.Decoder) (rid string, width, height int64, alt string) {
+	depth := 1
+	for depth > 0 {
+		tok, err := dec.Token()
+		if err != nil {
+			return rid, width, height, alt
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			depth++
+			switch localName(t.Name) {
+			case "blip":
+				if rid == "" {
+					rid = attr(t, "embed")
+				}
+			case "extent":
+				if width == 0 {
+					width = atoi64(attr(t, "cx"))
+					height = atoi64(attr(t, "cy"))
+				}
+			case "docPr":
+				alt = attr(t, "descr")
+			}
+		case xml.EndElement:
+			depth--
+		}
+	}
+	return rid, width, height, alt
 }
 
 func parseRelationshipDetails(data []byte) map[string]documentRelationship {
@@ -999,6 +1068,11 @@ func parseW3Time(s string) time.Time {
 
 func atoi(s string) int {
 	n, _ := strconv.Atoi(s)
+	return n
+}
+
+func atoi64(s string) int64 {
+	n, _ := strconv.ParseInt(s, 10, 64)
 	return n
 }
 

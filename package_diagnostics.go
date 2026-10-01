@@ -67,9 +67,40 @@ func ValidatePackage(data []byte) []PackageDiagnostic {
 			raw, _ := io.ReadAll(r)
 			_ = r.Close()
 			validateDocumentAnchors(raw, add)
+			validateUnsupportedDrawings(raw, "word/document.xml", add)
 		}
 	}
 	return out
+}
+
+func validateUnsupportedDrawings(data []byte, part string, add func(string, string, string, string)) {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	warned := false
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		local := localName(se.Name)
+		unsupported := ""
+		switch local {
+		case "graphicData":
+			uri := attr(se, "uri")
+			if uri != "http://schemas.openxmlformats.org/drawingml/2006/picture" && uri != "" {
+				unsupported = uri
+			}
+		case "shape", "textbox", "imagedata":
+			unsupported = local
+		}
+		if unsupported != "" && !warned {
+			add("warning", "unsupported_drawing", part, fmt.Sprintf("drawing type %s is preserved only as package XML", unsupported))
+			warned = true
+		}
+	}
 }
 
 func validateXML(r io.Reader) error {

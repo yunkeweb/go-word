@@ -23,3 +23,21 @@ func TestValidatePackageFindsMalformedZipAndMissingDocument(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestValidatePackageWarnsForUnsupportedDrawings(t *testing.T) {
+	d := New()
+	d.AddSection().AddDMLShape("roundRect", 100, 50, "5B9BD5", "2E75B6", 12700)
+	raw, err := d.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, diag := range ValidatePackage(raw) {
+		if diag.Code == "unsupported_drawing" && diag.Severity == "warning" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected unsupported drawing warning")
+	}
+}
