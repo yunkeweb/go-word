@@ -102,3 +102,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.p
 ## Related
 
 When Word shows “the file is corrupt”, start at [FAQ](./faq). Chart XSD order is documented on [Charts](./charts). Recipe 4 on [Enterprise Recipes](./recipes) combines SDT, repeating headers, tiled watermarks, and `AllowEdit`.
+
+## DOCX to HTML
+
+The reader reconstructs a DOCX DOM that can be rendered as an HTML fragment or a standalone page:
+
+```go
+html, err := doc.RenderHTML(word.HTMLOptions{
+	Standalone: true,
+	IncludeCSS: true,
+})
+```
+
+Use `word.RenderHTMLFile` or `word.RenderHTMLWithOptions` when the input is still a file or reader. Images default to embedded data URIs; set `ImageMode: word.HTMLImageURL` or provide `ImageURL` when assets should be served separately. Unsupported charts, complex shapes, and other lossy elements are reported through `RenderHTMLWithDiagnostics`; `Strict: true` turns those diagnostics into an error.

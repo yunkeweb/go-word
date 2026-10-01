@@ -26,7 +26,7 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 - **Template Engine v2** — `${variable}` placeholders, nested `${block}` loops, binary `${if}` / `${endif}` clipping, and chained `${var | pipe}` filters (`formatDate`, `formatCurrency`, `trim`, `upper`, `lower`, `truncate`, `default`).
 - **Advanced Layout** — mixed portrait/landscape sections, multi-column layout (`w:cols`), automatic TOC, VML watermarks, and read-only document protection.
 
-Also included: tables with nested cells, headers/footers, images, lists, footnotes/endnotes, bookmarks and internal hyperlinks, Markdown/HTML import, comments, track changes, a streaming `Save` / `StreamWriter`, and `sync.Pool` buffer reuse.
+Also included: tables with nested cells, headers/footers, images, lists, footnotes/endnotes, bookmarks and internal hyperlinks, Markdown/HTML import, DOCX to HTML rendering, comments, track changes, a streaming `Save` / `StreamWriter`, and `sync.Pool` buffer reuse.
 
 ## Installation
 
@@ -97,6 +97,7 @@ Runnable samples:
 | [`examples/v0.9.0_watermark_security`](examples/v0.9.0_watermark_security) | Tiled text watermark, image washout, `AllowEdit` |
 | [`examples/v0.8.0_demo`](examples/v0.8.0_demo) | OMML, DrawingML shapes, columns, `AppendDocument` |
 | [`examples/read_limits`](examples/read_limits) | Bounded ZIP reads with `ReadOptions` |
+| [`examples/docx_to_html`](examples/docx_to_html) | Render a DOCX DOM as standalone HTML |
 | [`examples/simple`](examples/simple) | Styles, titles, and a first `.docx` |
 
 API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word). Site: [yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/).

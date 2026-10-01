@@ -1,0 +1,785 @@
+package word
+
+import (
+	"bytes"
+	"encoding/base64"
+	"fmt"
+	"html"
+	"io"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/pkg/common"
+	"github.com/yunkeweb/go-word/style"
+)
+
+// HTMLImageMode controls image references in rendered HTML.
+type HTMLImageMode string
+
+const (
+	HTMLImageDataURI HTMLImageMode = "data"
+	HTMLImageURL     HTMLImageMode = "url"
+)
+
+// HTMLOptions controls DOCX to HTML rendering.
+type HTMLOptions struct {
+	Standalone            bool
+	Title                 string
+	ImageMode             HTMLImageMode
+	ImageURL              func(*element.Image) (string, error)
+	IncludeHeadersFooters bool
+	IncludeCSS            bool
+	Strict                bool
+}
+
+// HTMLDiagnostic describes a lossy or unsupported conversion.
+type HTMLDiagnostic struct {
+	ElementType string
+	Message     string
+}
+
+// HTMLRenderResult contains rendered HTML and non-fatal diagnostics.
+type HTMLRenderResult struct {
+	HTML        []byte
+	Diagnostics []HTMLDiagnostic
+}
+
+// HTMLUnsupportedError reports unsupported elements in strict mode.
+type HTMLUnsupportedError struct{ Diagnostics []HTMLDiagnostic }
+
+func (e *HTMLUnsupportedError) Error() string {
+	if e == nil || len(e.Diagnostics) == 0 {
+		return "word: unsupported HTML elements"
+	}
+	return fmt.Sprintf("word: unsupported HTML elements: %s", e.Diagnostics[0].ElementType)
+}
+
+// RenderHTML renders a loaded document as an HTML fragment or standalone page.
+func (d *Document) RenderHTML(opts HTMLOptions) ([]byte, error) {
+	res, err := d.RenderHTMLWithDiagnostics(opts)
+	if err != nil {
+		return nil, err
+	}
+	return res.HTML, nil
+}
+
+// RenderHTMLWithDiagnostics renders a document and returns conversion diagnostics.
+func (d *Document) RenderHTMLWithDiagnostics(opts HTMLOptions) (HTMLRenderResult, error) {
+	if d == nil {
+		return HTMLRenderResult{}, fmt.Errorf("word: nil document")
+	}
+	r := &htmlRenderer{opts: normalizeHTMLOptions(opts)}
+	r.renderDocument(d)
+	result := HTMLRenderResult{HTML: append([]byte(nil), r.buf.Bytes()...), Diagnostics: append([]HTMLDiagnostic(nil), r.diagnostics...)}
+	if r.opts.Strict && len(r.diagnostics) > 0 {
+		return result, &HTMLUnsupportedError{Diagnostics: result.Diagnostics}
+	}
+	return result, nil
+}
+
+// RenderHTML reads a DOCX from r and renders it as HTML.
+func RenderHTML(r io.Reader, opts HTMLOptions) ([]byte, error) {
+	d, err := Read(r)
+	if err != nil {
+		return nil, err
+	}
+	return d.RenderHTML(opts)
+}
+
+// RenderHTMLFile loads a DOCX file and renders it as HTML.
+func RenderHTMLFile(path string, opts HTMLOptions) ([]byte, error) {
+	d, err := Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return d.RenderHTML(opts)
+}
+
+// RenderHTMLWithOptions reads a DOCX with read budgets and renders it as HTML.
+func RenderHTMLWithOptions(r io.Reader, readOpts ReadOptions, htmlOpts HTMLOptions) ([]byte, error) {
+	d, err := ReadWithOptions(r, readOpts)
+	if err != nil {
+		return nil, err
+	}
+	return d.RenderHTML(htmlOpts)
+}
+
+// RenderHTMLFileWithOptions loads a DOCX with read budgets and renders it as HTML.
+func RenderHTMLFileWithOptions(path string, readOpts ReadOptions, htmlOpts HTMLOptions) ([]byte, error) {
+	d, err := LoadWithOptions(path, readOpts)
+	if err != nil {
+		return nil, err
+	}
+	return d.RenderHTML(htmlOpts)
+}
+
+// WriteHTML renders the document directly to an output stream.
+func (d *Document) WriteHTML(w io.Writer, opts HTMLOptions) error {
+	if w == nil {
+		return fmt.Errorf("word: nil HTML writer")
+	}
+	b, err := d.RenderHTML(opts)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(b)
+	return err
+}
+
+func normalizeHTMLOptions(opts HTMLOptions) HTMLOptions {
+	if opts.ImageMode == "" {
+		opts.ImageMode = HTMLImageDataURI
+	}
+	return opts
+}
+
+type htmlRenderer struct {
+	opts        HTMLOptions
+	buf         bytes.Buffer
+	diagnostics []HTMLDiagnostic
+}
+
+type htmlAttr struct{ name, value string }
+
+func (r *htmlRenderer) renderDocument(d *Document) {
+	if r.opts.Standalone {
+		r.buf.WriteString("<!doctype html><html><head><meta charset=\"utf-8\">")
+		title := r.opts.Title
+		if title == "" && d.info != nil {
+			title = d.info.Title
+		}
+		if title != "" {
+			r.tagText("title", title)
+		}
+		if r.opts.IncludeCSS {
+			r.buf.WriteString("<style>")
+			r.buf.WriteString(defaultHTMLCSS)
+			r.buf.WriteString("</style>")
+		}
+		r.buf.WriteString("</head><body>")
+	}
+	for _, sec := range d.sections {
+		if sec == nil {
+			continue
+		}
+		if r.opts.IncludeHeadersFooters {
+			for _, h := range sec.Headers {
+				r.open("header", htmlAttr{"data-type", h.HeaderType})
+				r.renderElements(h.Elements())
+				r.close("header")
+			}
+		}
+		r.renderElements(sec.Elements())
+		if r.opts.IncludeHeadersFooters {
+			for _, f := range sec.Footers {
+				r.open("footer", htmlAttr{"data-type", f.HeaderType})
+				r.renderElements(f.Elements())
+				r.close("footer")
+			}
+		}
+	}
+	if r.opts.Standalone {
+		r.buf.WriteString("</body></html>")
+	}
+}
+
+func (r *htmlRenderer) renderElements(elements []element.Element) {
+	for i := 0; i < len(elements); {
+		if isListElement(elements[i]) {
+			next := r.renderList(elements, i, listDepth(elements[i]))
+			if next > i {
+				i = next
+				continue
+			}
+		}
+		r.renderBlock(elements[i])
+		i++
+	}
+}
+
+func (r *htmlRenderer) renderBlock(el element.Element) {
+	switch v := el.(type) {
+	case *element.Text:
+		r.openStyled("p", paragraphStyle(v.ParagraphStyle))
+		r.renderText(v.Content, v.FontStyle)
+		r.close("p")
+	case *element.PreserveText:
+		r.open("p")
+		r.renderText(v.Content, v.FontStyle)
+		r.close("p")
+	case *element.TextRun:
+		r.openStyled("p", paragraphStyle(v.ParagraphStyle))
+		r.renderInlineElements(v.Elements())
+		r.close("p")
+	case *element.ListItem:
+		r.open("p")
+		r.renderText(v.Text, v.FontStyle)
+		r.close("p")
+	case *element.ListItemRun:
+		r.openStyled("p", paragraphStyle(v.ParagraphStyle))
+		r.renderInlineElements(v.Elements())
+		r.close("p")
+	case *element.Title:
+		depth := v.Depth
+		if depth < 1 {
+			depth = 1
+		}
+		if depth > 6 {
+			depth = 6
+		}
+		tag := "h" + strconv.Itoa(depth)
+		r.open(tag)
+		if v.Run != nil {
+			r.renderInlineElements(v.Run.Elements())
+		} else {
+			r.text(v.Text)
+		}
+		r.close(tag)
+	case *element.Link:
+		r.open("p")
+		r.renderLink(v)
+		r.close("p")
+	case *element.Table:
+		r.renderTable(v)
+	case *element.Image:
+		r.open("p")
+		r.renderImage(v)
+		r.close("p")
+	case *element.TextBreak:
+		r.open("p")
+		r.close("p")
+	case *element.PageBreak:
+		r.void("div", htmlAttr{"class", "goword-page-break"})
+	case *element.Footnote:
+		r.open("aside", htmlAttr{"class", "goword-footnote"})
+		r.renderElements(v.Elements())
+		r.close("aside")
+	case *element.Endnote:
+		r.open("aside", htmlAttr{"class", "goword-endnote"})
+		r.renderElements(v.Elements())
+		r.close("aside")
+	case *element.Comment:
+		r.open("aside", htmlAttr{"class", "goword-comment"})
+		r.renderElements(v.Elements())
+		r.close("aside")
+	case *element.TextBox:
+		r.open("div", htmlAttr{"class", "goword-textbox"})
+		r.renderElements(v.Elements())
+		r.close("div")
+	case *element.DMLShape:
+		r.open("div", htmlAttr{"class", "goword-shape"})
+		r.renderElements(v.Elements())
+		r.close("div")
+	case *element.Formula:
+		if v.Source != "" {
+			r.open("span", htmlAttr{"class", "goword-formula"})
+			r.text(v.Source)
+			r.close("span")
+		} else {
+			r.unsupported(v, "formula has no source text")
+		}
+	case *element.CheckBox:
+		r.open("p")
+		r.void("input", htmlAttr{"type", "checkbox"}, htmlAttr{"disabled", "disabled"})
+		r.renderText(v.Content, v.FontStyle)
+		r.close("p")
+	default:
+		r.unsupported(el, "element is not mapped to HTML")
+	}
+}
+
+func (r *htmlRenderer) renderInlineElements(elements []element.Element) {
+	for _, el := range elements {
+		switch v := el.(type) {
+		case *element.Text:
+			r.renderText(v.Content, v.FontStyle)
+		case *element.PreserveText:
+			r.renderText(v.Content, v.FontStyle)
+		case *element.Link:
+			r.renderLink(v)
+		case *element.Image:
+			r.renderImage(v)
+		case *element.TextRun:
+			r.renderInlineElements(v.Elements())
+		case *element.ListItemRun:
+			r.renderInlineElements(v.Elements())
+		case *element.CheckBox:
+			r.void("input", htmlAttr{"type", "checkbox"}, htmlAttr{"disabled", "disabled"})
+			r.renderText(v.Content, v.FontStyle)
+		case *element.FormField:
+			r.renderText(v.Value, v.FontStyle)
+		default:
+			r.unsupported(el, "inline element is not mapped to HTML")
+		}
+	}
+}
+
+func (r *htmlRenderer) renderText(text string, font any) {
+	if st := fontStyle(font); st != "" {
+		r.openStyled("span", st)
+		r.text(text)
+		r.close("span")
+	} else {
+		r.text(text)
+	}
+}
+
+func (r *htmlRenderer) renderLink(v *element.Link) {
+	target := v.Target
+	if v.Internal && !strings.HasPrefix(target, "#") {
+		target = "#" + target
+	}
+	if !safeURL(target) {
+		r.unsupported(v, "unsafe hyperlink URL")
+		r.renderText(v.Text, v.FontStyle)
+		return
+	}
+	r.open("a", htmlAttr{"href", target})
+	r.renderText(v.Text, v.FontStyle)
+	r.close("a")
+}
+
+func (r *htmlRenderer) renderTable(t *element.Table) {
+	attrs := []htmlAttr{}
+	if st := tableStyle(t.Style); st != "" {
+		attrs = append(attrs, htmlAttr{"style", st})
+	}
+	r.open("table", attrs...)
+	r.open("tbody")
+	for _, row := range t.Rows {
+		r.open("tr")
+		for _, cell := range row.Cells {
+			attrs := []htmlAttr{}
+			if cell.Style.GridSpan > 1 {
+				attrs = append(attrs, htmlAttr{"colspan", strconv.Itoa(cell.Style.GridSpan)})
+			}
+			if st := cellStyle(cell.Style); st != "" {
+				attrs = append(attrs, htmlAttr{"style", st})
+			}
+			r.open("td", attrs...)
+			r.renderElements(cell.Elements())
+			r.close("td")
+		}
+		r.close("tr")
+	}
+	r.close("tbody")
+	r.close("table")
+}
+
+func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) int {
+	kind := listKind(elements[start])
+	tag := "ul"
+	if kind == style.ListTypeNumber || kind == style.ListTypeNumberNE || kind == style.ListTypeMultilevel {
+		tag = "ol"
+	}
+	r.open(tag)
+	i := start
+	for i < len(elements) {
+		if !isListElement(elements[i]) || listDepth(elements[i]) < depth || listKind(elements[i]) != kind {
+			break
+		}
+		if listDepth(elements[i]) > depth {
+			i = r.renderList(elements, i, listDepth(elements[i]))
+			continue
+		}
+		r.open("li")
+		switch v := elements[i].(type) {
+		case *element.ListItem:
+			r.renderText(v.Text, v.FontStyle)
+		case *element.ListItemRun:
+			r.renderInlineElements(v.Elements())
+		}
+		i++
+		if i < len(elements) && isListElement(elements[i]) && listDepth(elements[i]) > depth {
+			i = r.renderList(elements, i, listDepth(elements[i]))
+		}
+		r.close("li")
+	}
+	r.close(tag)
+	return i
+}
+
+func isListElement(el element.Element) bool {
+	switch el.(type) {
+	case *element.ListItem, *element.ListItemRun:
+		return true
+	default:
+		return false
+	}
+}
+func listDepth(el element.Element) int {
+	switch v := el.(type) {
+	case *element.ListItem:
+		return maxInt(v.Depth, 0)
+	case *element.ListItemRun:
+		return maxInt(v.Depth, 0)
+	default:
+		return 0
+	}
+}
+func listKind(el element.Element) string {
+	switch v := el.(type) {
+	case *element.ListItem:
+		if s, ok := v.ListStyle.(style.ListItem); ok {
+			return s.ListType
+		}
+		if s, ok := v.ListStyle.(*style.ListItem); ok && s != nil {
+			return s.ListType
+		}
+	case *element.ListItemRun:
+		if s, ok := v.ListStyle.(style.ListItem); ok {
+			return s.ListType
+		}
+		if s, ok := v.ListStyle.(*style.ListItem); ok && s != nil {
+			return s.ListType
+		}
+	}
+	return style.ListTypeBullet
+}
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (r *htmlRenderer) renderImage(img *element.Image) {
+	src, err := r.imageSource(img)
+	if err != nil {
+		r.unsupported(img, err.Error())
+		return
+	}
+	attrs := []htmlAttr{{"src", src}}
+	alt := img.Style.AltText
+	if alt == "" {
+		alt = img.GetName()
+	}
+	attrs = append(attrs, htmlAttr{"alt", alt})
+	if img.Style.Width > 0 {
+		attrs = append(attrs, htmlAttr{"width", formatFloat(img.Style.Width)})
+	}
+	if img.Style.Height > 0 {
+		attrs = append(attrs, htmlAttr{"height", formatFloat(img.Style.Height)})
+	}
+	r.void("img", attrs...)
+}
+
+func (r *htmlRenderer) imageSource(img *element.Image) (string, error) {
+	if r.opts.ImageURL != nil {
+		src, err := r.opts.ImageURL(img)
+		if err != nil {
+			return "", err
+		}
+		if !safeURL(src) {
+			return "", fmt.Errorf("image %q has an unsafe URL", img.GetName())
+		}
+		return src, nil
+	}
+	if r.opts.ImageMode == HTMLImageURL {
+		if img.Source != "" && safeURL(img.Source) {
+			return img.Source, nil
+		}
+		if img.Media.Target != "" && safeURL(img.Media.Target) {
+			return img.Media.Target, nil
+		}
+		return "", fmt.Errorf("image %q has an unsafe URL", img.GetName())
+	}
+	data := img.Data
+	if len(data) == 0 {
+		data = img.Media.Data
+	}
+	if len(data) == 0 && img.Source != "" {
+		var err error
+		data, err = common.ReadFile(img.Source)
+		if err != nil {
+			return "", err
+		}
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("image %q has no data", img.GetName())
+	}
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(img.GetName()), "."))
+	if ext == "jpg" {
+		ext = "jpeg"
+	}
+	mime := mimeForExt(ext)
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+func (r *htmlRenderer) unsupported(el element.Element, msg string) {
+	typ := "unknown"
+	if el != nil {
+		typ = el.Type()
+	}
+	r.diagnostics = append(r.diagnostics, HTMLDiagnostic{ElementType: typ, Message: msg})
+	r.open("span", htmlAttr{"class", "goword-unsupported"}, htmlAttr{"data-element", typ})
+	r.text("[Unsupported: " + typ + "]")
+	r.close("span")
+}
+func (r *htmlRenderer) open(name string, attrs ...htmlAttr) {
+	r.buf.WriteByte('<')
+	r.buf.WriteString(name)
+	r.writeAttrs(attrs)
+	r.buf.WriteByte('>')
+}
+func (r *htmlRenderer) openStyled(name, css string) {
+	if css == "" {
+		r.open(name)
+	} else {
+		r.open(name, htmlAttr{"style", css})
+	}
+}
+func (r *htmlRenderer) void(name string, attrs ...htmlAttr) {
+	r.buf.WriteByte('<')
+	r.buf.WriteString(name)
+	r.writeAttrs(attrs)
+	r.buf.WriteString(">")
+}
+func (r *htmlRenderer) close(name string)      { r.buf.WriteString("</" + name + ">") }
+func (r *htmlRenderer) text(s string)          { r.buf.WriteString(html.EscapeString(s)) }
+func (r *htmlRenderer) tagText(name, s string) { r.open(name); r.text(s); r.close(name) }
+func (r *htmlRenderer) writeAttrs(attrs []htmlAttr) {
+	for _, a := range attrs {
+		if a.name == "" {
+			continue
+		}
+		r.buf.WriteByte(' ')
+		r.buf.WriteString(a.name)
+		r.buf.WriteString("=\"")
+		r.buf.WriteString(html.EscapeString(a.value))
+		r.buf.WriteByte('"')
+	}
+}
+
+func fontStyle(v any) string {
+	f, ok := asFont(v)
+	if !ok {
+		return ""
+	}
+	var p []string
+	if f.Name != "" {
+		p = append(p, "font-family:\""+cssString(f.Name)+"\"")
+	}
+	if f.Size > 0 {
+		p = append(p, "font-size:"+formatFloat(f.Size)+"pt")
+	}
+	if f.Color != "" {
+		p = append(p, "color:"+cssColor(f.Color))
+	}
+	if f.BgColor != "" {
+		p = append(p, "background-color:"+cssColor(f.BgColor))
+	}
+	if f.Bold {
+		p = append(p, "font-weight:700")
+	}
+	if f.Italic {
+		p = append(p, "font-style:italic")
+	}
+	if f.Underline != "" && f.Underline != style.UnderlineNone {
+		p = append(p, "text-decoration:underline")
+	}
+	if f.Strikethrough || f.DoubleStrikethrough {
+		p = append(p, "text-decoration:line-through")
+	}
+	if f.SuperScript {
+		p = append(p, "vertical-align:super;font-size:smaller")
+	}
+	if f.SubScript {
+		p = append(p, "vertical-align:sub;font-size:smaller")
+	}
+	if f.SmallCaps {
+		p = append(p, "font-variant:small-caps")
+	}
+	if f.AllCaps {
+		p = append(p, "text-transform:uppercase")
+	}
+	if f.Hidden {
+		p = append(p, "display:none")
+	}
+	if f.RTL {
+		p = append(p, "direction:rtl")
+	}
+	return strings.Join(p, ";")
+}
+func paragraphStyle(v any) string {
+	p, ok := asParagraph(v)
+	if !ok {
+		return ""
+	}
+	var out []string
+	if p.Alignment != "" {
+		out = append(out, "text-align:"+cssAlign(p.Alignment))
+	}
+	if p.Indentation.Left != 0 {
+		out = append(out, "margin-left:"+twipsPx(p.Indentation.Left))
+	}
+	if p.Indentation.Right != 0 {
+		out = append(out, "margin-right:"+twipsPx(p.Indentation.Right))
+	}
+	if p.Indentation.FirstLine != 0 {
+		out = append(out, "text-indent:"+twipsPx(p.Indentation.FirstLine))
+	}
+	if p.Spacing.Before != 0 {
+		out = append(out, "margin-top:"+twipsPx(p.Spacing.Before))
+	}
+	if p.Spacing.After != 0 {
+		out = append(out, "margin-bottom:"+twipsPx(p.Spacing.After))
+	}
+	if p.PageBreakBefore {
+		out = append(out, "break-before:page")
+	}
+	if p.Bidi {
+		out = append(out, "direction:rtl")
+	}
+	if p.Shading.Fill != "" {
+		out = append(out, "background-color:"+cssColor(p.Shading.Fill))
+	}
+	return strings.Join(out, ";")
+}
+func tableStyle(t style.Table) string {
+	out := []string{"border-collapse:collapse"}
+	if t.Width > 0 {
+		out = append(out, "width:"+twipsPx(t.Width))
+	}
+	if t.Shading.Fill != "" {
+		out = append(out, "background-color:"+cssColor(t.Shading.Fill))
+	}
+	return strings.Join(out, ";")
+}
+func cellStyle(c style.Cell) string {
+	var out []string
+	if c.Width > 0 {
+		out = append(out, "width:"+twipsPx(c.Width))
+	}
+	if c.VAlign != "" {
+		out = append(out, "vertical-align:"+cssVAlign(c.VAlign))
+	}
+	if c.NoWrap {
+		out = append(out, "white-space:nowrap")
+	}
+	if c.BgColor != "" {
+		out = append(out, "background-color:"+cssColor(c.BgColor))
+	}
+	if c.Shading.Fill != "" {
+		out = append(out, "background-color:"+cssColor(c.Shading.Fill))
+	}
+	if b := c.Borders.Top; b.Style != "" && b.Style != "nil" {
+		out = append(out, "border-top:"+borderCSS(b))
+	}
+	if b := c.Borders.Right; b.Style != "" && b.Style != "nil" {
+		out = append(out, "border-right:"+borderCSS(b))
+	}
+	if b := c.Borders.Bottom; b.Style != "" && b.Style != "nil" {
+		out = append(out, "border-bottom:"+borderCSS(b))
+	}
+	if b := c.Borders.Left; b.Style != "" && b.Style != "nil" {
+		out = append(out, "border-left:"+borderCSS(b))
+	}
+	return strings.Join(out, ";")
+}
+func asFont(v any) (style.Font, bool) {
+	switch x := v.(type) {
+	case style.Font:
+		return x, true
+	case *style.Font:
+		if x != nil {
+			return *x, true
+		}
+	}
+	return style.Font{}, false
+}
+func asParagraph(v any) (style.Paragraph, bool) {
+	switch x := v.(type) {
+	case style.Paragraph:
+		return x, true
+	case *style.Paragraph:
+		if x != nil {
+			return *x, true
+		}
+	}
+	return style.Paragraph{}, false
+}
+func cssString(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\\", "\\\\"), "\"", "\\\"")
+}
+func cssColor(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("#%,. -+", r) {
+			continue
+		}
+		return ""
+	}
+	return s
+}
+func cssAlign(s string) string {
+	switch strings.ToLower(s) {
+	case "center":
+		return "center"
+	case "right":
+		return "right"
+	case "both", "justify":
+		return "justify"
+	default:
+		return "left"
+	}
+}
+func cssVAlign(s string) string {
+	switch strings.ToLower(s) {
+	case "center", "middle":
+		return "middle"
+	case "bottom":
+		return "bottom"
+	default:
+		return "top"
+	}
+}
+func twipsPx(v int) string         { return formatFloat(float64(v)/15) + "px" }
+func formatFloat(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+func borderCSS(b style.Border) string {
+	color := b.Color
+	if color == "" {
+		color = "#000"
+	}
+	width := float64(b.Size) / 8
+	if width <= 0 {
+		width = 1
+	}
+	return formatFloat(width) + "pt " + borderStyle(b.Style) + " " + cssColor(color)
+}
+func borderStyle(s string) string {
+	switch strings.ToLower(s) {
+	case "double":
+		return "double"
+	case "dashed":
+		return "dashed"
+	case "dotted":
+		return "dotted"
+	default:
+		return "solid"
+	}
+}
+
+func safeURL(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	lower := strings.ToLower(s)
+	for _, prefix := range []string{"javascript:", "vbscript:", "data:"} {
+		if strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+	return !strings.ContainsAny(s, "\r\n\x00")
+}
+
+const defaultHTMLCSS = ".goword-page-break{break-before:page;height:0}.goword-unsupported{color:#a00;font-style:italic}.goword-comment,.goword-footnote,.goword-endnote{margin:.5em 0;padding:.4em;border-left:3px solid #aaa}.goword-textbox,.goword-shape{padding:.25em}"

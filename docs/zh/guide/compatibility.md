@@ -102,3 +102,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.p
 ## 相关
 
 Word 提示“文件损坏”时，从 [FAQ](./faq) 开始。图表 XSD 顺序见 [图表](./charts)。[企业级实战案例](./recipes) 第 4 则组合了 SDT、跨页表头、平铺水印与 `AllowEdit`。
+
+## DOCX 转 HTML
+
+读取器重建的 DOCX DOM 可以继续渲染为 HTML 片段或完整页面：
+
+```go
+html, err := doc.RenderHTML(word.HTMLOptions{
+	Standalone: true,
+	IncludeCSS: true,
+})
+```
+
+输入仍是文件或 Reader 时，可使用 `word.RenderHTMLFile` 或 `word.RenderHTMLWithOptions`。图片默认嵌入 data URI；如果资源由 Web 服务单独提供，可设置 `ImageMode: word.HTMLImageURL` 或提供 `ImageURL` 回调。图表、复杂形状等无法无损映射的元素会通过 `RenderHTMLWithDiagnostics` 报告；启用 `Strict: true` 后会直接返回错误。

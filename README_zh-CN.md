@@ -26,7 +26,7 @@
 - **Template Engine v2** — `${variable}` 占位符、嵌套 `${block}` 循环、二元比较 `${if}` / `${endif}`，以及 `${var | pipe}` 链式过滤器（`formatDate`、`formatCurrency`、`trim`、`upper`、`lower`、`truncate`、`default`）。
 - **Advanced Layout（高级排版）** — 多节横纵向混排、多栏排版（`w:cols`）、TOC 自动目录、VML 水印与只读文档保护。
 
-此外还包括：嵌套表格、页眉页脚、图片、列表、脚注/尾注、书签与内部超链接、Markdown/HTML 导入、批注、修订、流式 `Save` / `StreamWriter`，以及 `sync.Pool` 缓冲复用。
+此外还包括：嵌套表格、页眉页脚、图片、列表、脚注/尾注、书签与内部超链接、Markdown/HTML 导入、DOCX 转 HTML、批注、修订、流式 `Save` / `StreamWriter`，以及 `sync.Pool` 缓冲复用。
 
 ## 安装
 
