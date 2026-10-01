@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,11 @@ import (
 )
 
 type word2007Reader struct{}
+
+type documentRelationship struct {
+	Target string
+	Type   string
+}
 
 func (word2007Reader) Load(filename string) (*Document, error) {
 	zr, err := common.OpenZipFile(filename)
@@ -55,14 +61,35 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	rels := map[string]string{}
+	rels := map[string]documentRelationship{}
 	if relRaw, err := zr.ReadFileWithLimit("word/_rels/document.xml.rels", opts.partLimit()); err == nil {
-		rels = parseRelationshipTargets(relRaw)
+		rels = parseRelationshipDetails(relRaw)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	sec := doc.AddSection()
-	if err := parseDocumentXMLRels(raw, sec, rels); err != nil {
+	listStyles := map[int]style.ListItem{}
+	if numbering, e := zr.ReadFileWithLimit("word/numbering.xml", opts.partLimit()); e == nil {
+		listStyles = parseNumberingPart(numbering)
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return nil, e
+	}
+	sections, err := parseDocumentSections(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(sections) == 0 {
+		sections = append(sections, parsedSection{})
+	}
+	for _, parsed := range sections {
+		sec := doc.AddSection(parsed.style)
+		if err := parseDocumentXMLRels(parsed.body, sec, relationshipTargets(rels), listStyles); err != nil {
+			return nil, err
+		}
+		if err := loadSectionParts(zr, opts, sec, parsed.sectPr, rels); err != nil {
+			return nil, err
+		}
+	}
+	if err := loadNoteParts(zr, opts, doc, rels); err != nil {
 		return nil, err
 	}
 	if core, err := zr.ReadFileWithLimit("docProps/core.xml", opts.partLimit()); err == nil {
@@ -98,8 +125,376 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	return doc, nil
 }
 
+func loadNoteParts(zr *common.ZipReader, opts ReadOptions, doc *Document, rels map[string]documentRelationship) error {
+	for _, rel := range rels {
+		var dst string
+		switch {
+		case strings.HasSuffix(rel.Type, "/footnotes"):
+			dst = "footnotes"
+		case strings.HasSuffix(rel.Type, "/endnotes"):
+			dst = "endnotes"
+		case strings.HasSuffix(rel.Type, "/comments"):
+			dst = "comments"
+		default:
+			continue
+		}
+		target := path.Clean(path.Join("word", rel.Target))
+		raw, err := zr.ReadFileWithLimit(target, opts.partLimit())
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return err
+		}
+		notes := parseNotePart(raw, dst)
+		switch dst {
+		case "footnotes":
+			doc.footnotes = append(doc.footnotes, notes.footnotes...)
+		case "endnotes":
+			doc.endnotes = append(doc.endnotes, notes.endnotes...)
+		case "comments":
+			doc.comments = append(doc.comments, notes.comments...)
+		}
+	}
+	return nil
+}
+
+type parsedNotes struct {
+	footnotes []*element.Footnote
+	endnotes  []*element.Endnote
+	comments  []*element.Comment
+}
+
+func parseNotePart(data []byte, kind string) parsedNotes {
+	var out parsedNotes
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var noteID int
+	var author, initials, date string
+	var text strings.Builder
+	var active bool
+	flush := func() {
+		value := text.String()
+		text.Reset()
+		if value == "" {
+			return
+		}
+		switch kind {
+		case "footnotes":
+			n := element.NewFootnote(nil)
+			n.NoteID = noteID
+			n.AddText(value)
+			out.footnotes = append(out.footnotes, n)
+		case "endnotes":
+			n := element.NewEndnote(nil)
+			n.NoteID = noteID
+			n.AddText(value)
+			out.endnotes = append(out.endnotes, n)
+		case "comments":
+			c := &element.Comment{Author: author, Initials: initials, Date: date, CommentID: noteID}
+			c.Kind = "Comment"
+			c.AddText(value)
+			out.comments = append(out.comments, c)
+		}
+	}
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch localName(t.Name) {
+			case "footnote", "endnote", "comment":
+				noteID = atoi(attr(t, "id"))
+				active = noteID > 0
+				author, initials, date = attr(t, "author"), attr(t, "initials"), attr(t, "date")
+			case "t", "delText":
+				var s string
+				if dec.DecodeElement(&s, &t) == nil && active {
+					text.WriteString(s)
+				}
+			}
+		case xml.EndElement:
+			switch localName(t.Name) {
+			case "footnote", "endnote", "comment":
+				if active {
+					flush()
+				}
+				active = false
+			}
+		}
+	}
+	return out
+}
+
+func parseNumberingPart(data []byte) map[int]style.ListItem {
+	type abstractDef struct {
+		format string
+		levels map[int]string
+	}
+	abs := map[int]abstractDef{}
+	nums := map[int]int{}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var currentAbs, currentNum, currentLevel int
+	var currentFormat string
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch localName(t.Name) {
+			case "abstractNum":
+				currentAbs = atoi(attr(t, "abstractNumId"))
+				abs[currentAbs] = abstractDef{levels: map[int]string{}}
+			case "lvl":
+				currentLevel = atoi(attr(t, "ilvl"))
+				currentFormat = ""
+			case "numFmt":
+				currentFormat = attr(t, "val")
+			case "num":
+				currentNum = atoi(attr(t, "numId"))
+			case "abstractNumId":
+				nums[currentNum] = atoi(attr(t, "val"))
+			}
+		case xml.EndElement:
+			switch localName(t.Name) {
+			case "numFmt":
+				if def, ok := abs[currentAbs]; ok && currentAbs > 0 {
+					def.levels[currentLevel] = currentFormat
+					abs[currentAbs] = def
+				}
+			case "abstractNum":
+				currentAbs = 0
+			case "num":
+				currentNum = 0
+			}
+		}
+	}
+	out := map[int]style.ListItem{}
+	for id, abstractID := range nums {
+		def := abs[abstractID]
+		format := def.levels[0]
+		listType := style.ListTypeNumber
+		if format == "bullet" {
+			listType = style.ListTypeBullet
+		}
+		out[id] = style.ListItem{NumId: id, ListType: listType, Format: format}
+	}
+	return out
+}
+
 func parseDocumentXML(data []byte, sec *element.Section) error {
-	return parseDocumentXMLRels(data, sec, nil)
+	return parseDocumentXMLRels(data, sec, nil, nil)
+}
+
+type parsedSection struct {
+	body   []byte
+	sectPr []byte
+	style  style.Section
+}
+
+func parseDocumentSections(data []byte) ([]parsedSection, error) {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var body bytes.Buffer
+	var sections []parsedSection
+	depth := 0
+	skipEnds := 0
+	inBody := false
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			local := localName(t.Name)
+			if local == "body" {
+				inBody = true
+				continue
+			}
+			if !inBody {
+				continue
+			}
+			if local == "sectPr" {
+				// A non-final section stores sectPr inside a dedicated paragraph.
+				// Do not expose that structural paragraph as document content.
+				lastP := bytes.LastIndex(body.Bytes(), []byte("<p"))
+				if lastP >= 0 {
+					tail := body.Bytes()[lastP:]
+					if bytes.Contains(tail, []byte("<pPr")) && !bytes.Contains(tail, []byte("<r")) {
+						i := bytes.LastIndex(body.Bytes()[:lastP], []byte("<p"))
+						if i < 0 {
+							i = lastP
+						}
+						body.Truncate(i)
+						skipEnds = 2
+						depth = 0
+					}
+				}
+				var raw struct {
+					XML string `xml:",innerxml"`
+				}
+				if err := dec.DecodeElement(&raw, &t); err != nil {
+					return nil, err
+				}
+				pr := []byte("<w:sectPr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">")
+				pr = append(pr, []byte(raw.XML)...)
+				pr = append(pr, []byte("</w:sectPr>")...)
+				st := style.NewSection()
+				parseSectPr(pr, &st)
+				sections = append(sections, parsedSection{body: append([]byte(nil), body.Bytes()...), sectPr: pr, style: st})
+				body.Reset()
+				continue
+			}
+			depth++
+			if err := appendXMLToken(&body, t); err != nil {
+				return nil, err
+			}
+		case xml.EndElement:
+			if !inBody {
+				continue
+			}
+			if localName(t.Name) == "body" {
+				inBody = false
+				continue
+			}
+			if skipEnds > 0 {
+				skipEnds--
+				continue
+			}
+			if depth > 0 {
+				body.WriteString("</")
+				body.WriteString(t.Name.Local)
+				body.WriteString(">")
+				depth--
+			}
+		case xml.CharData:
+			if inBody {
+				if err := xml.EscapeText(&body, t); err != nil {
+					return nil, err
+				}
+			}
+		case xml.Comment:
+			if inBody {
+				body.WriteString("<!--")
+				body.Write(t)
+				body.WriteString("-->")
+			}
+		}
+	}
+	if len(sections) == 0 || body.Len() > 0 {
+		st := style.NewSection()
+		sections = append(sections, parsedSection{body: body.Bytes(), style: st})
+	}
+	return sections, nil
+}
+
+func appendXMLToken(dst *bytes.Buffer, tok xml.Token) error {
+	var buf bytes.Buffer
+	enc := xml.NewEncoder(&buf)
+	if err := enc.EncodeToken(tok); err != nil {
+		return err
+	}
+	if err := enc.Flush(); err != nil {
+		return err
+	}
+	dst.Write(buf.Bytes())
+	return nil
+}
+
+func escapeXMLAttr(s string) string {
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
+func parseSectPr(data []byte, st *style.Section) {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch localName(se.Name) {
+		case "type":
+			st.BreakType = attr(se, "val")
+		case "pgSz":
+			st.PageSizeW, st.PageSizeH = atoi(attr(se, "w")), atoi(attr(se, "h"))
+			if attr(se, "orient") == "landscape" {
+				st.Orientation = style.OrientationLandscape
+			}
+		case "pgMar":
+			st.MarginTop, st.MarginRight, st.MarginBottom, st.MarginLeft = atoi(attr(se, "top")), atoi(attr(se, "right")), atoi(attr(se, "bottom")), atoi(attr(se, "left"))
+			st.HeaderHeight, st.FooterHeight, st.Gutter = atoi(attr(se, "header")), atoi(attr(se, "footer")), atoi(attr(se, "gutter"))
+		case "pgNumType":
+			st.PageNumberingStart = atoi(attr(se, "start"))
+		case "cols":
+			st.ColsNum, st.ColsSpace = atoi(attr(se, "num")), atoi(attr(se, "space"))
+			st.ColsSeparator = attr(se, "sep") == "1" || attr(se, "sep") == "true"
+		}
+	}
+}
+
+func relationshipTargets(in map[string]documentRelationship) map[string]string {
+	out := map[string]string{}
+	for id, r := range in {
+		out[id] = r.Target
+	}
+	return out
+}
+
+func loadSectionParts(zr *common.ZipReader, opts ReadOptions, sec *element.Section, sectPr []byte, rels map[string]documentRelationship) error {
+	dec := xml.NewDecoder(bytes.NewReader(sectPr))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		local := localName(se.Name)
+		if local != "headerReference" && local != "footerReference" {
+			continue
+		}
+		typ := attr(se, "type")
+		id := attr(se, "id")
+		if id == "" {
+			continue
+		}
+		r, ok := rels[id]
+		if !ok {
+			continue
+		}
+		target := path.Clean(path.Join("word", r.Target))
+		raw, err := zr.ReadFileWithLimit(target, opts.partLimit())
+		if err != nil {
+			continue
+		}
+		partRels := map[string]string{}
+		base := path.Base(target)
+		if rr, e := zr.ReadFileWithLimit(path.Join(path.Dir(target), "_rels", base+".rels"), opts.partLimit()); e == nil {
+			partRels = parseRelationshipTargets(rr)
+		}
+		if strings.Contains(r.Type, "/header") {
+			h := sec.AddHeader(typ)
+			parseHeaderFooter(raw, h, partRels)
+		} else if strings.Contains(r.Type, "/footer") {
+			f := sec.AddFooter(typ)
+			parseHeaderFooter(raw, f, partRels)
+		}
+	}
+	return nil
 }
 
 type tblFrame struct {
@@ -109,7 +504,7 @@ type tblFrame struct {
 	para *element.TextRun
 }
 
-func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string) error {
+func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]style.ListItem) error {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
 		frames        []tblFrame
@@ -119,9 +514,12 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 		hyperInternal bool
 		hyperText     strings.Builder
 		pStyle        string
+		pNumID        int
+		pLevel        int
 		bodyRun       *element.TextRun
 		bold, italic  bool
 		color         string
+		track         *element.TrackChange
 	)
 	currentCell := func() *element.Cell {
 		if len(frames) == 0 {
@@ -168,7 +566,10 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 			hyperText.WriteString(t)
 			return
 		}
-		currentRun().AddText(t, runFont())
+		tx := currentRun().AddText(t, runFont())
+		if track != nil {
+			tx.SetTrackChange(track)
+		}
 	}
 	flushHyperlink := func() {
 		flushRun()
@@ -195,7 +596,8 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 				if len(els) == 1 {
 					if tx, ok := els[0].(*element.Text); ok {
 						c.RemoveElement(f.para)
-						c.AddText(tx.Content, tx.FontStyle, pStyle)
+						out := c.AddText(tx.Content, tx.FontStyle, pStyle)
+						out.SetTrackChange(tx.GetTrackChange())
 					}
 				}
 				f.para = nil
@@ -232,7 +634,18 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 					if pStyle != "" {
 						para = pStyle
 					}
-					sec.AddText(tx.Content, tx.FontStyle, para)
+					if pNumID > 0 {
+						list, ok := listStyles[pNumID]
+						if !ok {
+							list = style.ListItem{NumId: pNumID, ListType: style.ListTypeNumber, Format: style.NumberDecimal}
+						}
+						list.NumId, list.Depth = pNumID, pLevel
+						item := sec.AddListItem(tx.Content, pLevel, tx.FontStyle, list, para)
+						item.SetTrackChange(tx.GetTrackChange())
+					} else {
+						out := sec.AddText(tx.Content, tx.FontStyle, para)
+						out.SetTrackChange(tx.GetTrackChange())
+					}
 				} else if pStyle != "" {
 					bodyRun.SetParagraphStyle(pStyle)
 				}
@@ -244,6 +657,7 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 			bodyRun = nil
 		}
 		pStyle = ""
+		pNumID, pLevel = 0, 0
 		bold, italic, color = false, false, ""
 	}
 
@@ -268,6 +682,12 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 				}
 			case "pStyle":
 				pStyle = attr(t, "val")
+			case "ins", "del":
+				track = &element.TrackChange{ChangeType: local, Author: attr(t, "author"), Date: attr(t, "date")}
+			case "ilvl":
+				pLevel = atoi(attr(t, "val"))
+			case "numId":
+				pNumID = atoi(attr(t, "val"))
 			case "hyperlink":
 				flushRun()
 				inHyper = true
@@ -357,7 +777,7 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 						row.Style.Rule = rule
 					}
 				}
-			case "t":
+			case "t", "delText":
 				var s string
 				if err := dec.DecodeElement(&s, &t); err != nil {
 					return err
@@ -398,6 +818,8 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 				flushPara()
 			case "hyperlink":
 				flushHyperlink()
+			case "ins", "del":
+				track = nil
 			case "tbl":
 				if n := len(frames); n > 0 {
 					frames = frames[:n-1]
@@ -416,8 +838,8 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 	return nil
 }
 
-func parseRelationshipTargets(data []byte) map[string]string {
-	out := map[string]string{}
+func parseRelationshipDetails(data []byte) map[string]documentRelationship {
+	out := map[string]documentRelationship{}
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	for {
 		tok, err := dec.Token()
@@ -435,11 +857,75 @@ func parseRelationshipTargets(data []byte) map[string]string {
 		if id == "" {
 			id = attr(se, "id")
 		}
+		typ := attr(se, "Type")
 		if id != "" && target != "" {
-			out[id] = target
+			out[id] = documentRelationship{Target: target, Type: typ}
 		}
 	}
 	return out
+}
+
+func parseRelationshipTargets(data []byte) map[string]string {
+	out := map[string]string{}
+	for id, rel := range parseRelationshipDetails(data) {
+		out[id] = rel.Target
+	}
+	return out
+}
+
+func parseHeaderFooter(data []byte, c interface{ AddTextRun(...any) *element.TextRun }, rels map[string]string) {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var run *element.TextRun
+	var inHyper bool
+	var target string
+	var text strings.Builder
+	flushText := func() {
+		if run != nil && text.Len() > 0 {
+			run.AddLink(target, text.String())
+			text.Reset()
+		}
+	}
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch localName(t.Name) {
+			case "p":
+				run = c.AddTextRun()
+			case "t":
+				var s string
+				if dec.DecodeElement(&s, &t) == nil {
+					if inHyper {
+						text.WriteString(s)
+					} else {
+						if run == nil {
+							run = c.AddTextRun()
+						}
+						run.AddText(s)
+					}
+				}
+			case "hyperlink":
+				inHyper = true
+				target = attr(t, "anchor")
+				if target == "" && rels != nil {
+					target = rels[attr(t, "id")]
+				}
+			}
+		case xml.EndElement:
+			switch localName(t.Name) {
+			case "hyperlink":
+				flushText()
+				inHyper = false
+				target = ""
+			case "p":
+				flushText()
+				run = nil
+			}
+		}
+	}
 }
 
 func parseCoreProperties(data []byte, info *metadata.DocInfo) {

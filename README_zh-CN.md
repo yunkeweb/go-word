@@ -130,6 +130,14 @@ if err := dst.AppendDocument(src, word.MergeOptions{
 
 冲突的段落样式名与书签名会加上前缀；写出 ZIP 时图片部件获得新的关系 ID。
 
+## 当前开发 API
+
+- 读取器在 DOCX 往返中恢复 section 属性、常用页眉页脚、脚注尾注、批注、修订和列表编号。
+- `TemplateProcessor.SetValue` 支持跨相邻 Word 文本 run 的宏替换，并保留 run 属性。
+- `NewWithOptions` 为每个文档隔离默认字体，`ValidatePackage` 提供 ZIP/XML/关系/书签诊断。
+
+详见[读取与诊断指南](docs/zh/guide/diagnostics.md)。
+
 ## 开源协议
 
 GNU Lesser General Public License version 3，与 PHPWord 同族。详见 [LICENSE](LICENSE)。

@@ -130,6 +130,14 @@ if err := dst.AppendDocument(src, word.MergeOptions{
 
 Colliding paragraph style names and bookmark names are prefixed; image parts receive fresh relationship IDs when the package is written.
 
+## Current development APIs
+
+- The reader restores section properties, common header/footer parts, notes, comments, tracked changes, and list numbering during DOCX round trips.
+- `TemplateProcessor.SetValue` recognizes macros split across adjacent Word text runs while retaining run properties.
+- `NewWithOptions` isolates default font settings per document, and `ValidatePackage` reports ZIP/XML/relationship/bookmark diagnostics.
+
+See the [reader and diagnostics guide](docs/guide/diagnostics.md).
+
 ## License
 
 GNU Lesser General Public License version 3, same family as PHPWord. See [LICENSE](LICENSE).

@@ -11,29 +11,29 @@ import (
 
 // Document is the PHPWord PhpWord class: an in-memory word-processing document.
 type Document struct {
-	sections         []*element.Section
-	styles           []namedStyle
-	info             *metadata.DocInfo
-	settings         *metadata.Settings
-	compatibility    *metadata.Compatibility
-	defaultFontName  string
-	defaultAsianFont string
-	defaultFontSize  float64
-	defaultFontColor string
-	defaultParagraph *style.Paragraph
-	nextBookmarkID   int
-	footnotes        []*element.Footnote
-	endnotes         []*element.Endnote
-	comments         []*element.Comment
-	titles           []*element.Title
-	charts           []*element.Chart
+	sections           []*element.Section
+	styles             []namedStyle
+	info               *metadata.DocInfo
+	settings           *metadata.Settings
+	compatibility      *metadata.Compatibility
+	defaultFontName    string
+	defaultAsianFont   string
+	defaultFontSize    float64
+	defaultFontColor   string
+	defaultParagraph   *style.Paragraph
+	nextBookmarkID     int
+	footnotes          []*element.Footnote
+	endnotes           []*element.Endnote
+	comments           []*element.Comment
+	titles             []*element.Title
+	charts             []*element.Chart
 	textWatermark      string
 	textWatermarkOpts  WatermarkOptions
 	imageWatermark     []byte
 	imageWatermarkName string
 	imageWatermarkOpts ImageWatermarkOptions
-	extractedImages  []ImageFile
-	imagesLoaded     bool
+	extractedImages    []ImageFile
+	imagesLoaded       bool
 }
 
 // PhpWord is an alias for Document, matching the PHP class name.
@@ -89,7 +89,7 @@ func (d *Document) GetTitles() []*element.Title {
 
 // GetFootnotes returns footnote elements.
 func (d *Document) GetFootnotes() []*element.Footnote {
-	var out []*element.Footnote
+	out := append([]*element.Footnote(nil), d.footnotes...)
 	walkDocument(d, func(el element.Element) {
 		if t, ok := el.(*element.Footnote); ok {
 			out = append(out, t)
@@ -100,7 +100,7 @@ func (d *Document) GetFootnotes() []*element.Footnote {
 
 // GetEndnotes returns endnote elements.
 func (d *Document) GetEndnotes() []*element.Endnote {
-	var out []*element.Endnote
+	out := append([]*element.Endnote(nil), d.endnotes...)
 	walkDocument(d, func(el element.Element) {
 		if t, ok := el.(*element.Endnote); ok {
 			out = append(out, t)
@@ -130,6 +130,9 @@ func (d *Document) GetComments() []*element.Comment {
 		}
 		seen[c] = true
 		out = append(out, c)
+	}
+	for _, c := range d.comments {
+		add(c)
 	}
 	walkDocument(d, func(el element.Element) {
 		if t, ok := el.(*element.Comment); ok {

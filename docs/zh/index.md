@@ -48,6 +48,10 @@ features:
   <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.10.0"><img src="https://img.shields.io/badge/release-v0.10.0-green.svg" alt="v0.10.0" /></a>
 </p>
 
+## 当前开发 API
+
+读取器现在恢复 section 页面属性、常用页眉页脚、脚注尾注、批注、修订和列表编号。模板替换支持跨相邻 Word 文本 run 的宏。`NewWithOptions` 提供隔离的文档默认值，`ValidatePackage` 提供包诊断。详见[读取与诊断](/zh/guide/diagnostics)。
+
 ## v0.10.0 更新
 
 - 新增 `ReadOptions` 与 `WithOptions` API，可配置 ZIP 读取预算；旧 API 继续保持无限制行为。详见 [限制说明与可运行示例](/zh/guide/streaming)。

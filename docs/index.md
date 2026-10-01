@@ -48,6 +48,10 @@ features:
   <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.10.0"><img src="https://img.shields.io/badge/release-v0.10.0-green.svg" alt="v0.10.0" /></a>
 </p>
 
+## Current development APIs
+
+The reader now restores section geometry and common header/footer parts, notes, comments, revisions, and list numbering. Template replacement handles macros split across adjacent Word text runs. `NewWithOptions` provides isolated document defaults, and `ValidatePackage` reports package diagnostics. See [Reader & Diagnostics](/guide/diagnostics).
+
 ## What's new in v0.10.0
 
 - Set optional ZIP budgets with `ReadOptions` and the `WithOptions` APIs. Existing APIs retain unlimited reads. See [limits and a runnable example](/guide/streaming#optional-zip-budgets).

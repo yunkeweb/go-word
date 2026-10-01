@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitepress'
+﻿import { defineConfig } from 'vitepress'
 
 const github = 'https://github.com/yunkeweb/go-word'
 const pkgGoDev = 'https://pkg.go.dev/github.com/yunkeweb/go-word'
@@ -22,6 +22,7 @@ function enSidebar() {
         { text: 'Quick Start', link: '/guide/getting-started' },
         { text: 'Architecture', link: '/guide/architecture' },
         { text: 'OpenXML Compatibility', link: '/guide/compatibility' },
+        { text: 'Reader & Diagnostics', link: '/guide/diagnostics' },
       ],
     },
     {
@@ -90,6 +91,7 @@ function zhSidebar() {
         { text: '快速开始', link: '/zh/guide/getting-started' },
         { text: '架构设计', link: '/zh/guide/architecture' },
         { text: 'OpenXML 兼容性', link: '/zh/guide/compatibility' },
+        { text: '读取与诊断', link: '/zh/guide/diagnostics' },
       ],
     },
     {
@@ -196,6 +198,7 @@ export default defineConfig({
               { text: 'Quick Start', link: '/guide/getting-started' },
               { text: 'Architecture', link: '/guide/architecture' },
               { text: 'OpenXML Compatibility', link: '/guide/compatibility' },
+              { text: 'Reader & Diagnostics', link: '/guide/diagnostics' },
             ],
           },
           {

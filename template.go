@@ -191,16 +191,89 @@ func (t *TemplateProcessor) SetValueLimit(search, replace string, limit int) {
 		}
 		src := t.files[name]
 		if limit < 0 {
-			t.files[name] = bytes.ReplaceAll(src, old, neu)
+			t.files[name] = replaceAcrossRuns(src, old, neu, -1)
 			continue
 		}
-		n := bytes.Count(src, old)
-		if n > limit {
-			n = limit
-		}
-		t.files[name] = bytes.Replace(src, old, neu, n)
+		var n int
+		t.files[name], n = replaceAcrossRunsCount(src, old, neu, limit)
 		limit -= n
 	}
+}
+
+var templateParagraphRe = regexp.MustCompile(`(?s)<w:p\b[^>]*>.*?</w:p>`)
+var templateTextRe = regexp.MustCompile(`(?s)(<w:t\b[^>]*>)(.*?)(</w:t>)`)
+
+func replaceAcrossRuns(src, old, neu []byte, limit int) []byte {
+	out, _ := replaceAcrossRunsCount(src, old, neu, limit)
+	return out
+}
+
+func replaceAcrossRunsCount(src, old, neu []byte, limit int) ([]byte, int) {
+	if len(old) == 0 {
+		return src, 0
+	}
+	count := 0
+	out := templateParagraphRe.ReplaceAllFunc(src, func(par []byte) []byte {
+		if limit >= 0 && count >= limit {
+			return par
+		}
+		matches := templateTextRe.FindAllSubmatchIndex(par, -1)
+		if len(matches) == 0 {
+			return par
+		}
+		contents := make([][]byte, len(matches))
+		for i, m := range matches {
+			contents[i] = append([]byte(nil), par[m[4]:m[5]]...)
+		}
+		for {
+			if limit >= 0 && count >= limit {
+				break
+			}
+			joined := bytes.Join(contents, nil)
+			idx := bytes.Index(joined, old)
+			if idx < 0 {
+				break
+			}
+			end := idx + len(old)
+			startNode, endNode := -1, -1
+			startOff, endOff := 0, 0
+			off := 0
+			for i, c := range contents {
+				next := off + len(c)
+				if startNode < 0 && idx < next {
+					startNode, startOff = i, idx-off
+				}
+				if end <= next {
+					endNode, endOff = i, end-off
+					break
+				}
+				off = next
+			}
+			if startNode < 0 || endNode < 0 {
+				break
+			}
+			if startNode == endNode {
+				contents[startNode] = append(append(append([]byte{}, contents[startNode][:startOff]...), neu...), contents[startNode][endOff:]...)
+			} else {
+				contents[startNode] = append(append(append([]byte{}, contents[startNode][:startOff]...), neu...), nil...)
+				for i := startNode + 1; i < endNode; i++ {
+					contents[i] = nil
+				}
+				contents[endNode] = append([]byte{}, contents[endNode][endOff:]...)
+			}
+			count++
+		}
+		var b bytes.Buffer
+		prev := 0
+		for i, m := range matches {
+			b.Write(par[prev:m[4]])
+			b.Write(contents[i])
+			prev = m[5]
+		}
+		b.Write(par[prev:])
+		return b.Bytes()
+	})
+	return out, count
 }
 
 // SetValues replaces many placeholders.
