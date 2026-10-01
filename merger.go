@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/yunkeweb/go-word/element"
+	"github.com/yunkeweb/go-word/style"
 )
 
 // MergeOptions controls how AppendDocument remaps colliding identifiers.
@@ -30,7 +31,7 @@ func (d *Document) AppendDocument(src *Document, opts MergeOptions) error {
 		opts.SectionBreak = "nextPage"
 	}
 
-	styleMap := d.mergeStyles(src, opts.StylePrefix)
+	styleMap, numberingMap := d.mergeStyles(src, opts.StylePrefix)
 	usedBM := map[string]bool{}
 	for _, b := range d.GetBookmarks() {
 		usedBM[b.Name] = true
@@ -62,20 +63,30 @@ func (d *Document) AppendDocument(src *Document, opts MergeOptions) error {
 		}
 		clonedSections = append(clonedSections, cloned)
 	}
-	remapClonedTrees(clonedSections, styleMap, usedBM, opts.BookmarkPrefix)
+	remapClonedTrees(clonedSections, styleMap, numberingMap, usedBM, opts.BookmarkPrefix)
 	return nil
 }
 
-func (d *Document) mergeStyles(src *Document, prefix string) map[string]string {
+func (d *Document) mergeStyles(src *Document, prefix string) (map[string]string, map[int]int) {
 	out := map[string]string{}
+	numberingMap := map[int]int{}
 	if src == nil {
-		return out
+		return out, numberingMap
 	}
 	have := map[string]bool{}
+	destNumbering := 0
 	for _, s := range d.styles {
 		have[s.Name] = true
+		if s.Kind == "numbering" {
+			destNumbering++
+		}
 	}
+	srcNumbering := 0
 	for _, s := range src.styles {
+		if s.Kind == "numbering" {
+			srcNumbering++
+			numberingMap[2+srcNumbering] = 2 + destNumbering + srcNumbering
+		}
 		name := s.Name
 		if have[name] {
 			name = prefix + s.Name
@@ -93,10 +104,10 @@ func (d *Document) mergeStyles(src *Document, prefix string) map[string]string {
 			out[s.Name] = name
 		}
 	}
-	return out
+	return out, numberingMap
 }
 
-func remapClonedTrees(roots []*element.Section, styleMap map[string]string, usedBM map[string]bool, bmPrefix string) {
+func remapClonedTrees(roots []*element.Section, styleMap map[string]string, numberingMap map[int]int, usedBM map[string]bool, bmPrefix string) {
 	bmMap := map[string]string{}
 	for _, root := range roots {
 		walkElement(root, func(el element.Element) {
@@ -137,6 +148,10 @@ func remapClonedTrees(roots []*element.Section, styleMap map[string]string, used
 			case *element.ListItem:
 				v.FontStyle = remapStyleRef(v.FontStyle, styleMap)
 				v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
+				v.ListStyle = remapListStyle(v.ListStyle, styleMap, numberingMap)
+			case *element.ListItemRun:
+				v.ParagraphStyle = remapStyleRef(v.ParagraphStyle, styleMap)
+				v.ListStyle = remapListStyle(v.ListStyle, styleMap, numberingMap)
 			case *element.Table:
 				if v.Style.StyleName != "" {
 					if neu, ok := styleMap[v.Style.StyleName]; ok {
@@ -150,6 +165,29 @@ func remapClonedTrees(roots []*element.Section, styleMap map[string]string, used
 				}
 			}
 		})
+	}
+}
+
+func remapListStyle(value any, styleMap map[string]string, numberingMap map[int]int) any {
+	switch v := value.(type) {
+	case string:
+		return remapStyleRef(v, styleMap)
+	case style.ListItem:
+		if id, ok := numberingMap[v.NumId]; ok {
+			v.NumId = id
+		}
+		return v
+	case *style.ListItem:
+		if v == nil {
+			return v
+		}
+		c := *v
+		if id, ok := numberingMap[c.NumId]; ok {
+			c.NumId = id
+		}
+		return &c
+	default:
+		return value
 	}
 }
 

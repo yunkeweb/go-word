@@ -87,3 +87,40 @@ func TestAppendDocumentNilSource(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestAppendDocumentRemapsNumberingStylesAndIDs(t *testing.T) {
+	dst := New()
+	dst.AddNumberingStyle("outline", style.Numbering{Type: "multilevel", Levels: []style.NumberingLevel{{Format: style.NumberDecimal}}})
+	dst.AddNumberingStyle("destOnly", style.Numbering{Levels: []style.NumberingLevel{{Format: style.NumberLowerLetter}}})
+	dstSec := dst.AddSection()
+	dstSec.AddListItem("destination", 0, nil, nil, "outline")
+
+	src := New()
+	src.AddNumberingStyle("outline", style.Numbering{Type: "multilevel", Levels: []style.NumberingLevel{{Format: style.NumberUpperRoman}}})
+	src.AddNumberingStyle("srcOnly", style.Numbering{Levels: []style.NumberingLevel{{Format: style.NumberLowerRoman}}})
+	srcSec := src.AddSection()
+	srcSec.AddListItem("named source", 0, nil, nil, "outline")
+	srcSec.AddListItem("explicit source", 0, nil, nil, style.ListItem{NumId: 4})
+
+	if err := dst.AppendDocument(src, MergeOptions{StylePrefix: "src_"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := dst.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	docxml := readZipFile(t, raw, "word/document.xml")
+	if strings.Count(docxml, `w:numId w:val="3"`) != 1 {
+		t.Fatalf("destination numbering id was changed: %s", docxml)
+	}
+	if strings.Count(docxml, `w:numId w:val="5"`) != 1 {
+		t.Fatalf("source named numbering was not remapped: %s", docxml)
+	}
+	if strings.Count(docxml, `w:numId w:val="6"`) != 1 {
+		t.Fatalf("source explicit numbering was not remapped: %s", docxml)
+	}
+	numbering := readZipFile(t, raw, "word/numbering.xml")
+	if !strings.Contains(numbering, `w:numId="5"`) || !strings.Contains(numbering, `w:numId="6"`) {
+		t.Fatalf("numbering ids missing: %s", numbering)
+	}
+}
