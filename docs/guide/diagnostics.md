@@ -24,4 +24,4 @@ for _, finding := range word.ValidatePackage(raw) {
 }
 ```
 
-The reader restores section geometry and common header/footer parts, note bodies, comment metadata, tracked insertions/deletions, and list paragraph numbering. `TemplateProcessor.SetValue` also recognizes macros split across adjacent `w:r` / `w:t` nodes while retaining run properties.
+The reader restores section geometry and common header/footer parts, note bodies, comment metadata, tracked insertions/deletions, list paragraph numbering, and inline pictures. For pictures it retains the relationship target, encoded bytes, `wp:extent` dimensions (EMU and pixels), and `wp:docPr@descr` alt text. `ValidatePackage` reports unsupported chart, shape, and text-box drawings as warnings; those drawing types are not silently treated as pictures. `TemplateProcessor.SetValue` also recognizes macros split across adjacent `w:r` / `w:t` nodes while retaining run properties.
