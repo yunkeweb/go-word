@@ -48,11 +48,11 @@ func main() {
 	doc.SetDefaultFontSize(11)
 
 	info := doc.GetDocInfo()
-	info.Title = "GoWord v0.10.0"
+	info.Title = "GoWord v0.11.0"
 	info.Creator = "GoWord"
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.10.0", 1)
+	sec.AddTitle("GoWord v0.11.0", 1)
 	sec.AddText("Native Office Math:")
 	sec.AddMath(`\frac{a}{b}`)
 

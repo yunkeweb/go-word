@@ -2,9 +2,13 @@
 
 ## Unreleased / 开发中
 
+## v0.11.0 — 2026-10-01
+
 - Read section properties, common header/footer parts, notes, comments, tracked changes, and list numbering.
 - Support template macros split across adjacent Word text runs.
-- Add NewWithOptions and ValidatePackage for instance defaults and package diagnostics.`r`n`r`n## v0.10.0 — 2026-10-01
+- Add NewWithOptions and ValidatePackage for instance defaults and package diagnostics.
+
+## v0.10.0 — 2026-10-01
 
 ### Added / 新增
 

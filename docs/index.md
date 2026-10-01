@@ -45,20 +45,20 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.10.0"><img src="https://img.shields.io/badge/release-v0.10.0-green.svg" alt="v0.10.0" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.11.0"><img src="https://img.shields.io/badge/release-v0.11.0-green.svg" alt="v0.11.0" /></a>
 </p>
 
 ## Current development APIs
 
 The reader now restores section geometry and common header/footer parts, notes, comments, revisions, and list numbering. Template replacement handles macros split across adjacent Word text runs. `NewWithOptions` provides isolated document defaults, and `ValidatePackage` reports package diagnostics. See [Reader & Diagnostics](/guide/diagnostics).
 
-## What's new in v0.10.0
+## What's new in v0.11.0
 
 - Set optional ZIP budgets with `ReadOptions` and the `WithOptions` APIs. Existing APIs retain unlimited reads. See [limits and a runnable example](/guide/streaming#optional-zip-budgets).
 - Fix output error propagation, repeated-save comments, header/footer relationships, template image XML and delimiter isolation, and text/bookmark preservation during reading and merging.
 - Reduce XML input copying and cache resource relationship lookups.
 
-See the [v0.10.0 release](https://github.com/yunkeweb/go-word/releases/tag/v0.10.0) and [changelog](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md).
+See the [v0.11.0 release](https://github.com/yunkeweb/go-word/releases/tag/v0.11.0) and [changelog](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md).
 
 ## Core advantages
 
@@ -128,7 +128,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.10.0", 1)
+	sec.AddTitle("GoWord v0.11.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -139,7 +139,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.10.0
+go get github.com/yunkeweb/go-word@v0.11.0
 ```
 
 Continue with [Installation](/guide/installation), [Quick Start](/guide/getting-started), [SDT](/guide/sdt), [Tables](/guide/table), [Watermark & Protection](/guide/protect), and the four [Enterprise Recipes](/guide/recipes). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).
