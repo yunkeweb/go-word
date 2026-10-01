@@ -26,6 +26,16 @@
 
 `B/op` 是每次迭代的额外堆，不是 `.docx` 体积。随着段落增加，流式写出器的分配保持平稳，因为 `document.xml` 边写边刷。
 
+## DOCX → HTML 渲染
+
+HTML 渲染器使用 2,000 段正文和十张五列表格的大文档进行基准测试：
+
+```sh
+go test . -run '^$' -bench BenchmarkRenderHTMLLargeDocument -benchmem -count=1
+```
+
+测试套件同时检查标签闭合、void 元素、转义和 500 段文档。基准只测 DOM 到 HTML 的渲染，不包含 DOCX 读取时间。
+
 ## 流式解析与内存占用
 
 `StreamExtractText` / `StreamExtractImages` 用 `encoding/xml.Decoder` 扫描 ZIP。每个段落字符串交给回调后即丢弃。额外堆**不会**像 `Load` / `LoadBytes` 那样随页数增长。

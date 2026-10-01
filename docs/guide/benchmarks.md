@@ -26,6 +26,16 @@ Re-run on your hardware before quoting the figures in a capacity plan. Allocatio
 
 `B/op` is extra heap per iteration, not the size of the `.docx`. Stream writer allocations stay flat as you add paragraphs because `document.xml` is flushed as it is produced.
 
+## DOCX → HTML rendering
+
+The HTML renderer is exercised with a 2,000-paragraph document plus ten 5-column tables:
+
+```sh
+go test . -run '^$' -bench BenchmarkRenderHTMLLargeDocument -benchmem -count=1
+```
+
+The test suite also checks balanced tags, void elements, escaping, and a 500-paragraph document. The benchmark measures DOM-to-HTML rendering only; DOCX loading is outside the timed section.
+
 ## Streaming parse and memory occupancy
 
 `StreamExtractText` / `StreamExtractImages` scan the ZIP with `encoding/xml.Decoder`. Each paragraph string is handed to the callback and then dropped. Extra heap does **not** grow with page count the way `Load` / `LoadBytes` does.

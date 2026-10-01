@@ -201,3 +201,106 @@ func TestRenderHTMLWithOptionsAndWriteHTML(t *testing.T) {
 		t.Fatalf("stream output=%s", out.String())
 	}
 }
+
+func TestRenderHTMLProducesBalancedStructure(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddTitle("Structure", 1)
+	sec.AddText("escaped <text> & unicode ✓")
+	sec.AddListItem("item", 0, style.Font{}, nil, style.ListItem{ListType: style.ListTypeBullet})
+	tbl := sec.AddTable()
+	tbl.AddRow().AddCell(900).AddText("cell")
+	sec.AddImageBytes("pixel.png", []byte{1, 2, 3}, style.Image{AltText: "pixel"})
+
+	got, err := doc.RenderHTML(HTMLOptions{Standalone: true, IncludeCSS: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHTMLStructure(t, string(got))
+}
+
+func TestRenderHTMLLargeDocument(t *testing.T) {
+	doc := buildLargeHTMLDocument(500)
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(got), "<p>") < 500 {
+		t.Fatalf("large document rendered too few paragraphs: %d", strings.Count(string(got), "<p>"))
+	}
+	assertHTMLStructure(t, string(got))
+}
+
+func buildLargeHTMLDocument(paragraphs int) *Document {
+	doc := New()
+	sec := doc.AddSection()
+	for i := 0; i < paragraphs; i++ {
+		sec.AddText("The quick brown fox jumps over the lazy dog.", style.Font{Size: 11})
+	}
+	for r := 0; r < 10; r++ {
+		tbl := sec.AddTable(style.Table{Width: 9000})
+		row := tbl.AddRow()
+		for c := 0; c < 5; c++ {
+			row.AddCell(1800).AddText("cell")
+		}
+	}
+	return doc
+}
+
+func assertHTMLStructure(t *testing.T, s string) {
+	t.Helper()
+	voidTags := map[string]bool{
+		"area": true, "base": true, "br": true, "col": true, "embed": true,
+		"hr": true, "img": true, "input": true, "link": true, "meta": true,
+		"param": true, "source": true, "track": true, "wbr": true,
+	}
+	var stack []string
+	for pos := 0; pos < len(s); {
+		relStart := strings.IndexByte(s[pos:], '<')
+		if relStart < 0 {
+			break
+		}
+		start := pos + relStart
+		relEnd := strings.IndexByte(s[start+1:], '>')
+		if relEnd < 0 {
+			t.Fatalf("unterminated tag at byte %d", start)
+		}
+		end := start + 1 + relEnd
+		token := strings.TrimSpace(s[start+1 : end])
+		pos = end + 1
+		if token == "" || strings.HasPrefix(token, "!") || strings.HasPrefix(token, "?") {
+			continue
+		}
+		if strings.HasPrefix(token, "/") {
+			name := strings.Fields(strings.TrimSpace(strings.TrimPrefix(token, "/")))[0]
+			if len(stack) == 0 || stack[len(stack)-1] != name {
+				t.Fatalf("mismatched closing tag </%s>, stack=%v", name, stack)
+			}
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		selfClosing := strings.HasSuffix(token, "/")
+		name := strings.Fields(strings.TrimSpace(strings.TrimSuffix(token, "/")))[0]
+		if !voidTags[name] && !selfClosing {
+			stack = append(stack, name)
+		}
+	}
+	if len(stack) != 0 {
+		t.Fatalf("unclosed tags: %v", stack)
+	}
+}
+
+var htmlBenchmarkSink []byte
+
+func BenchmarkRenderHTMLLargeDocument(b *testing.B) {
+	doc := buildLargeHTMLDocument(2000)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		got, err := doc.RenderHTML(HTMLOptions{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		htmlBenchmarkSink = got
+	}
+}
