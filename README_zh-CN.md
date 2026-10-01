@@ -108,10 +108,9 @@ func main() {
 ```sh
 go run ./tests/matrix
 go run tests/matrix/validate_reader.go
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
 ```
 
-`validate_reader.go` 用 `word.Open` / `word.Read`、`word.StreamExtractText`、`word.StreamExtractImages` 反向解包（库中没有 `ReadDOM`）。`validate_docs.ps1` 以无头 Microsoft Word COM（`DisplayAlerts = 0`、`OpenNoRepairDialog`）打开同一批文件。v0.9.0 在两端均为 **80 PASS / 0 FAIL**。
+`validate_reader.go` 用 `word.Open` / `word.Read`、`word.StreamExtractText`、`word.StreamExtractImages` 反向解包（库中没有 `ReadDOM`）。80 份文档矩阵可以在本地生成并用 Go 反向解析；在 Microsoft Word 中打开文件属于可选的 Windows 手工检查。
 
 ## 文档合并
 

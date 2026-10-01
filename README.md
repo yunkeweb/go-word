@@ -109,10 +109,9 @@ API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/githu
 ```sh
 go run ./tests/matrix
 go run tests/matrix/validate_reader.go
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
 ```
 
-`validate_reader.go` reverse-parses each file through `word.Open` / `word.Read`, `word.StreamExtractText`, and `word.StreamExtractImages` (there is no `ReadDOM`). `validate_docs.ps1` opens the same files in a headless Microsoft Word COM session (`DisplayAlerts = 0`, `OpenNoRepairDialog`). v0.9.0 scored **80 PASS / 0 FAIL** on both engines.
+`validate_reader.go` reverse-parses each file through `word.Open` / `word.Read`, `word.StreamExtractText`, and `word.StreamExtractImages` (there is no `ReadDOM`). The 80-document matrix can be generated and reverse-parsed locally; opening files in Microsoft Word remains an optional Windows-only manual check.
 
 ## Document merger
 

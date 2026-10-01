@@ -88,7 +88,6 @@ func main() {
 ```sh
 go run ./tests/matrix
 go run tests/matrix/validate_reader.go
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
 ```
 
 | 引擎 | 检查内容 | v0.9.0 结果 |
@@ -97,7 +96,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.p
 | `word.StreamExtractText` / `word.StreamExtractImages` | 流式提取，无 panic，`error == nil` | 80 PASS |
 | Microsoft Word COM（`DisplayAlerts=0`、`OpenNoRepairDialog`） | OpenXML 修复弹窗、节点顺序、解析异常 | 80 PASS |
 
-`validate_docs.ps1` 启动无头 `Word.Application`，只读打开每份文件。Word 本会弹出的修复对话框会变成异常。
 
 ## 相关
 

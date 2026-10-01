@@ -418,7 +418,6 @@ Regenerate the 80 randomly combined documents that cover every exported module f
 ```sh
 go run ./tests/matrix
 go run tests/matrix/validate_reader.go
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
 ```
 
 | Engine | Check | v0.9.0 |

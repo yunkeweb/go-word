@@ -88,7 +88,6 @@ func main() {
 ```sh
 go run ./tests/matrix
 go run tests/matrix/validate_reader.go
-powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.ps1
 ```
 
 | Engine | What it checks | v0.9.0 result |
@@ -97,7 +96,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests/matrix/validate_docs.p
 | `word.StreamExtractText` / `word.StreamExtractImages` | Streaming extract, no panic, `error == nil` | 80 PASS |
 | Microsoft Word COM (`DisplayAlerts=0`, `OpenNoRepairDialog`) | OpenXML repair dialogs, node order, parse exceptions | 80 PASS |
 
-`validate_docs.ps1` starts a headless `Word.Application` and opens each file read-only. A repair that Word would normally dialog becomes an exception.
 
 ## Related
 
