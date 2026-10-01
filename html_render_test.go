@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -348,4 +350,48 @@ func (shortHTMLWriter) Write(p []byte) (int, error) {
 		return 0, nil
 	}
 	return len(p) - 1, nil
+}
+
+func TestRenderHTMLEntrypointParityAndDeterminism(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddTitle("Parity", 1)
+	sec.AddText("same output")
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := HTMLOptions{Standalone: true, IncludeCSS: true}
+	want, err := doc.RenderHTML(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeat, err := doc.RenderHTML(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(want, repeat) {
+		t.Fatal("repeated Document rendering is not deterministic")
+	}
+	readerHTML, err := RenderHTML(bytes.NewReader(raw), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limitedHTML, err := RenderHTMLWithOptions(bytes.NewReader(raw), ReadOptions{}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "parity.docx")
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fileHTML, err := RenderHTMLFile(path, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string][]byte{"reader": readerHTML, "limited": limitedHTML, "file": fileHTML} {
+		if !bytes.Equal(want, got) {
+			t.Errorf("%s entrypoint output differs", name)
+		}
+	}
 }
