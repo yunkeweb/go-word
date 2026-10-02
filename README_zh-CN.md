@@ -32,18 +32,20 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.0
+go get github.com/yunkeweb/go-word@v0.12.1
 ```
 
 需要 **Go 1.21** 或更高版本。
 
-## v0.12.0：DOCX 转 HTML
+## v0.12.1：DOCX 转 HTML
 
 `RenderHTMLFile` 返回 HTML 字节，由调用方使用 `os.WriteFile` 保存；也可先加载文档，再用 `Document.WriteHTML` 直接写入目标。[DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html) 提供完整程序、全部七个入口、图片处理、诊断和 ZIP 读取限制说明。
 
 渲染器支持嵌套列表与编号、DOM 表格合并属性、书签、分节及可选的页眉页脚。转换目标是可读的 HTML，不保证 Word 分页或任意 DOCX 的完整保真；严格模式只检查保留的 DOM 元素，不覆盖读取阶段遗漏的内容。
 
-升级时请使用具名字段初始化 `style.ListItem`，该类型新增了 `Start`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-12-0)和[更新日志](CHANGELOG.md)。
+升级时请使用具名字段初始化 `style.ListItem` 和 `style.Spacing`，两者分别新增了 `Start` 和 `BeforeSet`/`AfterSet`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-12-1)和[更新日志](CHANGELOG.md)。
+
+**v0.12.1 修复：** DOCX 导入会解析正文及表格单元格中的文档默认样式与具名段落/字符样式继承，保留常用文字和段落格式；同时修复数字标题样式 ID、中文计数编号、行内换行和 OOXML RGB 颜色。
 
 ## 快速开始
 
@@ -72,7 +74,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.12.0", 1)
+	sec.AddTitle("GoWord v0.12.1", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

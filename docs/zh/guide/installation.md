@@ -14,7 +14,7 @@ GoWord 是单一 Go 模块。写出器、读取器、模板引擎、合并器与
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.0
+go get github.com/yunkeweb/go-word@v0.12.1
 ```
 
 该命令会在你的模块中写入带版本的 require，并把源码下载到模块缓存。
@@ -22,10 +22,10 @@ go get github.com/yunkeweb/go-word@v0.12.0
 ## 升级
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.0
+go get github.com/yunkeweb/go-word@v0.12.1
 ```
 
-CI 中请钉死 tag。模块代理索引见 [proxy.golang.org](https://proxy.golang.org/github.com/yunkeweb/go-word/@v/v0.12.0.info)。请阅读 [v0.12.0 升级说明](./docx-to-html#升级至-v0-12-0)，留意 `style.ListItem` 的具名字段初始化及 HTML 保真限制。
+CI 中请钉死 tag。模块代理索引见 [proxy.golang.org](https://proxy.golang.org/github.com/yunkeweb/go-word/@v/v0.12.1.info)。请阅读 [v0.12.1 升级说明](./docx-to-html#升级至-v0-12-1)，留意 `style.ListItem` / `style.Spacing` 的具名字段初始化及 HTML 保真限制。
 
 ## 导入
 

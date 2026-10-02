@@ -1,6 +1,6 @@
 # DOCX 转 HTML
 
-从 **v0.12.0** 起提供。使用 Go 标准库将已加载的文档或 DOCX 文件转换为 HTML 片段或完整页面，无需 Microsoft Word、LibreOffice、cgo 或外部转换进程。
+从 **v0.12.0** 起提供，**v0.12.1** 补齐 DOCX 样式还原修复。使用 Go 标准库将已加载的文档或 DOCX 文件转换为 HTML 片段或完整页面，无需 Microsoft Word、LibreOffice、cgo 或外部转换进程。
 
 ## 转换文件
 
@@ -30,7 +30,7 @@ func main() {
 }
 ```
 
-**`RenderHTMLFile` 返回 HTML 字节，不接收输出文件名，也不负责写文件。** 由调用方保存结果。仓库的 [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.0/examples/docx_to_html) 还提供了自动生成输入 DOCX 的可运行示例。
+**`RenderHTMLFile` 返回 HTML 字节，不接收输出文件名，也不负责写文件。** 由调用方保存结果。仓库的 [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.1/examples/docx_to_html) 还提供了自动生成输入 DOCX 的可运行示例。
 
 ## API 参考
 
@@ -150,10 +150,12 @@ if errors.As(err, &unsupported) {
 
 ## 支持范围与限制
 
+以下样式还原能力需要 v0.12.1 或更高版本。
+
 | 内容 | 输出与边界 |
 | --- | --- |
-| 段落、标题、文本 run、链接 | 语义标签及支持的内联样式；不完整重建 Word 样式继承 |
-| 列表 | 嵌套列表、常见十进制/字母/罗马数字、起始值及按编号 ID 续接；不完整复现自定义组合编号和所有 Word 重启规则 |
+| 段落、标题、文本 run、链接 | 语义标签、行内换行、字体、字号、颜色、强调、下划线、背景色、对齐、缩进、段间距和行距。正文及表格单元格中的段落会解析文档默认样式、默认段落样式，以及具名段落/字符样式的 `basedOn` 继承；直接格式优先。数字样式 ID 可通过标题名称和大纲级别识别。主题字体/颜色及完整 Word 样式级联仍未完全覆盖 |
+| 列表 | 嵌套列表、常见十进制/字母/罗马数字、中文计数编号、起始值及按编号 ID 续接；不完整复现自定义组合编号和所有 Word 重启规则 |
 | 表格 | 嵌套表格及 DOM 合并属性映射为 HTML，包括 `rowspan` / `colspan`；读取任意 DOCX 合并属性仍有限制 |
 | 书签 | DOM 书签输出为锚点，内部链接指向锚点 |
 | 节与分页 | 多节使用 `section` 和 `data-break-type`；显式分页使用 `goword-page-break`。分节元数据不等于 Word 分页引擎 |
@@ -163,11 +165,15 @@ if errors.As(err, &unsupported) {
 
 转换目标是可读的 HTML，不保证与 Word 页面逐像素一致。严格模式成功也不代表无损转换；接入新类别文档前，请先验证有代表性的样本。
 
-## 升级至 v0.12.0
+<a id="升级至-v0-12-0"></a>
+
+## 升级至 v0.12.1
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.0
+go get github.com/yunkeweb/go-word@v0.12.1
 ```
+
+v0.12.1 恢复支持的 DOCX 样式，并输出更多文字和段落内联 CSS，请更新受影响的 HTML 快照与自定义 CSS。`style.Spacing` 新增 `BeforeSet` 和 `AfterSet`：将对应标记设为 `true` 可保留显式零间距。请使用具名字段初始化，按位置初始化的字面量需要调整。
 
 模块路径和纯 Go 运行要求不变。相较 v0.11.0，HTML API 为新增能力。如果使用过开发快照，请更新 HTML 快照测试和 CSS，适配 section 包裹、列表 `type`/`start` 属性、合并单元格属性以及正确闭合的分页元素。缺失嵌入图片引用现在可能导致严格模式失败。
 

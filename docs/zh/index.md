@@ -51,21 +51,21 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.12.0"><img src="https://img.shields.io/badge/release-v0.12.0-green.svg" alt="v0.12.0" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.12.1"><img src="https://img.shields.io/badge/release-v0.12.1-green.svg" alt="v0.12.1" /></a>
 </p>
 
 ## 读取与模板 API
 
 读取器现在恢复 section 页面属性、常用页眉页脚、脚注尾注、批注、修订和列表编号。模板替换支持跨相邻 Word 文本 run 的宏。`NewWithOptions` 提供隔离的文档默认值，`ValidatePackage` 提供包诊断。详见[读取与诊断](/zh/guide/diagnostics)。
 
-## v0.12.0 更新
+## v0.12.1 更新
 
-- 使用 `RenderHTML`、`RenderHTMLFile`、带读取限制的变体及 `Document.WriteHTML`，将 DOCX 文件或已加载文档转为 HTML。
-- 支持嵌套列表与编号、DOM 表格合并属性、书签、分节和可选的页眉页脚；图片可嵌入，也可由应用管理资源 URL。
+- 还原 DOCX 文档默认样式及具名段落/字符样式继承，保留字体、字号、强调、对齐、缩进和行距。
+- 修复数字标题样式 ID、中文计数编号、OOXML 颜色和行内换行；保留超链接文字格式，以及 DOCX 往返中的标题格式。
 - `RenderHTMLWithDiagnostics` 提供诊断，严格模式在遇到保留的未支持元素时失败；它不诊断读取器遗漏的内容，也不保证 Word 页面保真。
-- [完整指南与升级说明](/zh/guide/docx-to-html) 包含 `style.ListItem.Start` 的变化及具名字段初始化建议。
+- [完整指南与升级说明](/zh/guide/docx-to-html) 包含新增的 `style.Spacing.BeforeSet` / `AfterSet` 字段及具名字段初始化建议。
 
-查看 [v0.12.0 发行版](https://github.com/yunkeweb/go-word/releases/tag/v0.12.0) 与 [更新日志](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md)。
+查看 [v0.12.1 发行版](https://github.com/yunkeweb/go-word/releases/tag/v0.12.1) 与 [更新日志](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md)。
 
 ## 核心优势
 
@@ -135,7 +135,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.12.0", 1)
+	sec.AddTitle("GoWord v0.12.1", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -146,7 +146,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.0
+go get github.com/yunkeweb/go-word@v0.12.1
 ```
 
 接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)、[SDT](/zh/guide/sdt)、[表格](/zh/guide/table)、[水印与保护](/zh/guide/protect)，以及四份 [企业级实战案例](/zh/guide/recipes)。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。

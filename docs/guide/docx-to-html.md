@@ -1,6 +1,6 @@
 # DOCX to HTML
 
-Available in **v0.12.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
+Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
 ## Convert a file
 
@@ -30,7 +30,7 @@ func main() {
 }
 ```
 
-**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.0/examples/docx_to_html).
+**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.1/examples/docx_to_html).
 
 ## API reference
 
@@ -150,10 +150,12 @@ Diagnostics cover elements that reach the renderer. They are **not a complete OO
 
 ## Supported content and limits
 
+The style restoration described below requires v0.12.1 or later.
+
 | Content | Output and boundary |
 | --- | --- |
-| Paragraphs, headings, text runs, links | Semantic tags and supported inline styles; full Word style inheritance is not reconstructed |
-| Lists | Nested lists, common decimal/letter/Roman formats, start values and continuation by numbering ID; custom composite labels and all Word restart rules are not fully reproduced |
+| Paragraphs, headings, text runs, links | Semantic tags, inline breaks, fonts, sizes, colors, emphasis, underlining, shading, alignment, indentation, paragraph spacing and line spacing. Body and table-cell paragraphs resolve document defaults, default paragraph styles, and named paragraph/character styles through `basedOn`; direct formatting overrides inherited values. Heading names and outline levels work with numeric style IDs. Theme fonts/colors and the full Word style cascade remain incomplete |
+| Lists | Nested lists, common decimal/letter/Roman formats, Chinese counting, start values and continuation by numbering ID; custom composite labels and all Word restart rules are not fully reproduced |
 | Tables | Nested tables and DOM merge properties map to HTML, including `rowspan` / `colspan`; reading arbitrary DOCX merge properties remains limited |
 | Bookmarks | DOM bookmarks become anchors and internal links target them |
 | Sections and page breaks | Multiple sections use `section` and `data-break-type`; explicit page breaks use `goword-page-break`. Section break metadata does not implement Word pagination |
@@ -163,11 +165,15 @@ Diagnostics cover elements that reach the renderer. They are **not a complete OO
 
 Conversion aims at readable HTML, not pixel-identical Word pages. A successful strict conversion does not guarantee lossless conversion. Review representative documents before adopting it for a new document family.
 
-## Upgrading to v0.12.0
+<a id="upgrading-to-v0-12-0"></a>
+
+## Upgrading to v0.12.1
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.0
+go get github.com/yunkeweb/go-word@v0.12.1
 ```
+
+v0.12.1 restores supported DOCX styles and emits additional inline CSS for text and paragraph formatting. Update affected HTML snapshots and custom CSS. `style.Spacing` adds `BeforeSet` and `AfterSet`: set the corresponding flag to `true` to preserve an explicit zero margin. Use keyed struct literals; positional literals need updating.
 
 The module path and pure-Go runtime requirements are unchanged. HTML APIs are new since v0.11.0. If you used development snapshots, update HTML snapshots/CSS for section wrappers, list `type`/`start` attributes, merged-cell attributes and properly closed page-break elements. Missing embedded-image references can now cause strict mode to fail.
 
