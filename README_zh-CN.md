@@ -99,7 +99,7 @@ func main() {
 | [`examples/read_limits`](examples/read_limits) | 使用 `ReadOptions` 设置 ZIP 读取预算 |
 | [`examples/simple`](examples/simple) | 样式、标题与第一份 `.docx` |
 
-包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。站点：[yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/zh/)。
+包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。站点：[go-word.yunkeweb.com](https://go-word.yunkeweb.com/zh/)。请查看 [DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html)，了解文件转换、图片资源、诊断和严格模式。
 
 ## 全要素矩阵
 

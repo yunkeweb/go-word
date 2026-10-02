@@ -100,7 +100,7 @@ Runnable samples:
 | [`examples/docx_to_html`](examples/docx_to_html) | Render a DOCX DOM as standalone HTML |
 | [`examples/simple`](examples/simple) | Styles, titles, and a first `.docx` |
 
-API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word). Site: [yunkeweb.github.io/go-word](https://yunkeweb.github.io/go-word/).
+API reference: [pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word). Site: [go-word.yunkeweb.com](https://go-word.yunkeweb.com/). The [DOCX to HTML guide](https://go-word.yunkeweb.com/guide/docx-to-html) covers file conversion, image assets, diagnostics, and strict mode.
 
 ## Full-feature matrix
 

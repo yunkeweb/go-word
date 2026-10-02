@@ -2,6 +2,7 @@
 
 const github = 'https://github.com/yunkeweb/go-word'
 const pkgGoDev = 'https://pkg.go.dev/github.com/yunkeweb/go-word'
+const site = 'https://go-word.yunkeweb.com/'
 
 // Algolia DocSearch reservation. Leave appId/apiKey empty to keep local search.
 // Set ALGOLIA_APP_ID / ALGOLIA_SEARCH_API_KEY / ALGOLIA_INDEX_NAME at build time
@@ -22,6 +23,7 @@ function enSidebar() {
         { text: 'Quick Start', link: '/guide/getting-started' },
         { text: 'Architecture', link: '/guide/architecture' },
         { text: 'OpenXML Compatibility', link: '/guide/compatibility' },
+        { text: 'DOCX to HTML', link: '/guide/docx-to-html' },
         { text: 'Reader & Diagnostics', link: '/guide/diagnostics' },
       ],
     },
@@ -91,6 +93,7 @@ function zhSidebar() {
         { text: '快速开始', link: '/zh/guide/getting-started' },
         { text: '架构设计', link: '/zh/guide/architecture' },
         { text: 'OpenXML 兼容性', link: '/zh/guide/compatibility' },
+        { text: 'DOCX 转 HTML', link: '/zh/guide/docx-to-html' },
         { text: '读取与诊断', link: '/zh/guide/diagnostics' },
       ],
     },
@@ -153,7 +156,9 @@ function zhSidebar() {
 export default defineConfig({
   title: 'GoWord',
   description: '100% pure Go standard-library engine for industrial Microsoft Word (.docx) processing, with zero third-party dependencies.',
-  base: '/go-word/',
+  base: '/',
+  srcDir: '.',
+  sitemap: { hostname: site },
   lastUpdated: true,
   cleanUrls: true,
   ignoreDeadLinks: false,
@@ -198,6 +203,7 @@ export default defineConfig({
               { text: 'Quick Start', link: '/guide/getting-started' },
               { text: 'Architecture', link: '/guide/architecture' },
               { text: 'OpenXML Compatibility', link: '/guide/compatibility' },
+              { text: 'DOCX to HTML', link: '/guide/docx-to-html' },
               { text: 'Reader & Diagnostics', link: '/guide/diagnostics' },
             ],
           },
@@ -265,6 +271,7 @@ export default defineConfig({
               { text: '快速开始', link: '/zh/guide/getting-started' },
               { text: '架构设计', link: '/zh/guide/architecture' },
               { text: 'OpenXML 兼容性', link: '/zh/guide/compatibility' },
+              { text: 'DOCX 转 HTML', link: '/zh/guide/docx-to-html' },
             ],
           },
           {
