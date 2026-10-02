@@ -179,9 +179,17 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 		}
 		r.writeString("</head><body>")
 	}
+	multiSection := len(d.sections) > 1
 	for _, sec := range d.sections {
 		if sec == nil {
 			continue
+		}
+		if multiSection {
+			attrs := []htmlAttr{}
+			if sec.Style.BreakType != "" {
+				attrs = append(attrs, htmlAttr{"data-break-type", sec.Style.BreakType})
+			}
+			r.open("section", attrs...)
 		}
 		if r.opts.IncludeHeadersFooters {
 			for _, h := range sec.Headers {
@@ -197,6 +205,9 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 				r.renderElements(f.Elements())
 				r.close("footer")
 			}
+		}
+		if multiSection {
+			r.close("section")
 		}
 	}
 	if r.opts.Standalone {
@@ -277,7 +288,8 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 		r.open("p")
 		r.close("p")
 	case *element.PageBreak:
-		r.void("div", htmlAttr{"class", "goword-page-break"})
+		r.open("div", htmlAttr{"class", "goword-page-break"})
+		r.close("div")
 	case *element.Footnote:
 		r.open("aside", htmlAttr{"class", "goword-footnote"})
 		r.renderElements(v.Elements())

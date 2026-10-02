@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yunkeweb/go-word/element"
 	"github.com/yunkeweb/go-word/style"
 )
 
@@ -62,4 +63,52 @@ func TestHTMLMixedNestedLists(t *testing.T) {
 	if !bytes.Equal(got, []byte(want)) {
 		t.Fatalf("got %s", got)
 	}
+}
+
+func TestHTMLSectionsHeadersAndPageBreaksDOCX(t *testing.T) {
+	doc := New()
+	first := doc.AddSection()
+	first.Style.BreakType = "nextPage"
+	first.AddHeader(element.HeaderFirst).AddText("first header")
+	first.AddFooter(element.HeaderEven).AddText("even footer")
+	first.AddText("first section")
+	first.AddPageBreak()
+	second := doc.AddSection(style.Section{Orientation: style.OrientationLandscape, BreakType: "continuous"})
+	second.AddHeader().AddText("second header")
+	second.AddText("second section")
+
+	raw, err := doc.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadBytes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Sections()) != 2 {
+		t.Fatalf("sections=%d", len(loaded.Sections()))
+	}
+	if loaded.Sections()[0].Style.BreakType != "nextPage" || loaded.Sections()[1].Style.BreakType != "continuous" {
+		t.Fatalf("break types=%q,%q", loaded.Sections()[0].Style.BreakType, loaded.Sections()[1].Style.BreakType)
+	}
+	if loaded.Sections()[1].Style.Orientation != style.OrientationLandscape {
+		t.Fatalf("orientation=%q", loaded.Sections()[1].Style.Orientation)
+	}
+	got, err := loaded.RenderHTML(HTMLOptions{IncludeHeadersFooters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`<section data-break-type="nextPage">`,
+		`<section data-break-type="continuous">`,
+		`<header data-type="first">`,
+		`<footer data-type="even">`,
+		`class="goword-page-break"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q: %s", want, s)
+		}
+	}
+	assertHTMLStructure(t, s)
 }
