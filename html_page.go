@@ -16,7 +16,8 @@ body.goword-document{margin:0;padding:24px 0;background:#e7e7e7;color:#000}
 @media print{
 body.goword-document{padding:0;background:#fff}
 .goword-page{display:block;width:auto!important;min-height:0!important;padding:0!important;margin:0!important;box-shadow:none}
-.goword-page+.goword-page:not([data-break-type="continuous"]){break-before:page}
+.goword-page+.goword-page{break-before:page}
+.goword-page[data-break-type="continuous"]{break-before:auto}
 .goword-page[data-break-type="evenPage"]{break-before:left}
 .goword-page[data-break-type="oddPage"]{break-before:right}
 }
