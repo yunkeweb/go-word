@@ -2,6 +2,17 @@
 
 ## Unreleased / 开发中
 
+### Added / 新增
+
+- DOCX to HTML now preserves multilevel list numbering, list formats, section boundaries, header/footer types, and page-break structure during round trips.
+- Missing DOCX image relationships remain visible to the HTML renderer as diagnostics instead of being silently dropped.
+- Added bilingual DOCX to HTML production guidance and published the documentation site at `https://go-word.yunkeweb.com/`.
+
+### Tests / 测试
+
+- Added real DOCX round-trip coverage for numbering, sections, headers, footers, page breaks, and missing image resources.
+- Added fuzz coverage for HTML text escaping and balanced output structure.
+
 ## v0.11.0 — 2026-10-01
 
 - Read section properties, common header/footer parts, notes, comments, tracked changes, and list numbering.
