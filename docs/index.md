@@ -51,21 +51,21 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.12.1"><img src="https://img.shields.io/badge/release-v0.12.1-green.svg" alt="v0.12.1" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.12.2"><img src="https://img.shields.io/badge/release-v0.12.2-green.svg" alt="v0.12.2" /></a>
 </p>
 
 ## Reader and template APIs
 
 The reader now restores section geometry and common header/footer parts, notes, comments, revisions, and list numbering. Template replacement handles macros split across adjacent Word text runs. `NewWithOptions` provides isolated document defaults, and `ValidatePackage` reports package diagnostics. See [Reader & Diagnostics](/guide/diagnostics).
 
-## What's new in v0.12.1
+## What's new in v0.12.2
 
-- Restore DOCX document defaults and named paragraph/character style inheritance, including fonts, sizes, emphasis, alignment, indentation and line spacing.
-- Correct numeric heading style IDs, Chinese counting lists, OOXML colors and inline breaks. Preserve hyperlink run formatting and formatted headings across DOCX round trips.
-- Inspect diagnostics with `RenderHTMLWithDiagnostics`; strict mode fails on unsupported retained elements. It does not diagnose content omitted by the reader or guarantee Word page fidelity.
-- Read the [complete guide and upgrade notes](/guide/docx-to-html), including the new `style.Spacing.BeforeSet` / `AfterSet` fields and the use of keyed struct literals.
+- Preserve section paper sizes, orientation and margins in standalone HTML with built-in CSS. Centered paper previews retain the DOCX content width, including on narrow screens.
+- Use named print-page rules for section geometry and apply explicit hyperlink colors and underline settings directly to links.
+- Screen previews grow vertically; Word's automatic pagination is not reproduced. Fragments and standalone output without built-in CSS retain flowing layout.
+- Read the [complete guide and upgrade notes](/guide/docx-to-html) for options, compatibility and fidelity limits. The DOCX style restoration fixes from v0.12.1 remain included.
 
-See the [v0.12.1 release](https://github.com/yunkeweb/go-word/releases/tag/v0.12.1) and [changelog](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md).
+See the [v0.12.2 release](https://github.com/yunkeweb/go-word/releases/tag/v0.12.2) and [changelog](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md).
 
 ## Core advantages
 
@@ -135,7 +135,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.12.1", 1)
+	sec.AddTitle("GoWord v0.12.2", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -146,7 +146,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.1
+go get github.com/yunkeweb/go-word@v0.12.2
 ```
 
 Continue with [Installation](/guide/installation), [Quick Start](/guide/getting-started), [SDT](/guide/sdt), [Tables](/guide/table), [Watermark & Protection](/guide/protect), and the four [Enterprise Recipes](/guide/recipes). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).

@@ -227,6 +227,20 @@ func TestHTMLDOCXHyperlinkRunFormattingAndBreakOrder(t *testing.T) {
 	}
 }
 
+func TestHTMLDOCXHyperlinkExplicitAppearanceOnAnchor(t *testing.T) {
+	// A child span cannot remove the anchor's default underline, and inheriting
+	// color inside it inherits the browser's blue/purple link color, not the body.
+	got := renderHTMLDOCXFormatting(t, `<w:p><w:hyperlink w:anchor="destination"><w:r><w:rPr><w:color w:val="auto"/><w:u w:val="none"/></w:rPr><w:t>plain-looking link</w:t></w:r></w:hyperlink></w:p>`, "", "")
+	anchor := regexp.MustCompile(`<a\s[^>]*>`).FindString(got)
+	requireHTMLDOCXFormatting(t, anchor, `href="#destination"`, "color:inherit", "text-decoration:none")
+}
+
+func TestHTMLDOCXHyperlinkExplicitColorAndUnderlineOnAnchor(t *testing.T) {
+	got := renderHTMLDOCXFormatting(t, `<w:p><w:hyperlink w:anchor="destination"><w:r><w:rPr><w:color w:val="112233"/><w:u w:val="single"/></w:rPr><w:t>styled link</w:t></w:r></w:hyperlink></w:p>`, "", "")
+	anchor := regexp.MustCompile(`<a\s[^>]*>`).FindString(got)
+	requireHTMLDOCXFormatting(t, anchor, "color:#112233", "text-decoration:underline")
+}
+
 func TestHTMLDOCXInlineBreakRoundTrip(t *testing.T) {
 	raw := htmlDOCXFormattingFixture(t, `<w:p><w:r><w:t>before</w:t><w:br/><w:t>after</w:t></w:r></w:p>`, "", "")
 	doc, err := LoadBytes(raw)

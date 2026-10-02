@@ -32,20 +32,20 @@ Also included: tables with nested cells, headers/footers, images, lists, footnot
 ## Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.1
+go get github.com/yunkeweb/go-word@v0.12.2
 ```
 
 Requires **Go 1.21+**.
 
-## DOCX to HTML in v0.12.1
+## DOCX to HTML in v0.12.2
 
 `RenderHTMLFile` returns HTML bytes. Save them with `os.WriteFile`, or load a document and use `Document.WriteHTML` for direct writer output. The [DOCX to HTML guide](https://go-word.yunkeweb.com/guide/docx-to-html) includes complete programs, all seven entry points, image handling, diagnostics, and ZIP read limits.
 
 The renderer supports nested lists and numbering, DOM table merges, bookmarks, section boundaries, and optional headers/footers. Conversion targets readable HTML; Word pagination and arbitrary DOCX fidelity are not guaranteed. Strict mode checks retained DOM elements, not content omitted during reading.
 
-When upgrading, use keyed `style.ListItem` and `style.Spacing` literals: these types add `Start` and `BeforeSet`/`AfterSet`, respectively. See the [upgrade notes](https://go-word.yunkeweb.com/guide/docx-to-html#upgrading-to-v0-12-1) and [changelog](CHANGELOG.md).
+When upgrading, use keyed `style.ListItem` and `style.Spacing` literals: these types add `Start` and `BeforeSet`/`AfterSet`, respectively. See the [upgrade notes](https://go-word.yunkeweb.com/guide/docx-to-html#upgrading-to-v0-12-2) and [changelog](CHANGELOG.md).
 
-**v0.12.1 fixes:** DOCX imports now resolve document defaults and named paragraph/character style inheritance for body and table-cell paragraphs, retaining common text and paragraph formatting. Numeric heading style IDs, Chinese counting lists, inline breaks and OOXML RGB colors are also handled.
+**v0.12.2 fixes:** With `Standalone: true` and `IncludeCSS: true`, HTML uses each section's paper size, orientation and margins to preserve the DOCX content width on screen and when printing. Explicit hyperlink colors and underline settings override browser defaults. Screen previews grow vertically; Word's automatic pagination is not reproduced. The DOCX style inheritance fixes from v0.12.1 remain included.
 
 ## Quick Start
 
@@ -74,7 +74,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.12.1", 1)
+	sec.AddTitle("GoWord v0.12.2", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

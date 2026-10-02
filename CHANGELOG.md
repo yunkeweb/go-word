@@ -2,6 +2,20 @@
 
 ## Unreleased / 开发中
 
+## v0.12.2 — 2026-10-03
+
+### Fixed / 修复
+
+- Match standalone HTML screen and print layout to DOCX section paper geometry, including page size, orientation, margins, centered paper previews, narrow-screen overflow behavior and named print-page rules. Preserve flowing fragments and standalone output without built-in CSS. Screen previews preserve content width but do not implement Word's automatic pagination.
+- 让完整 HTML 的屏幕及打印布局匹配 DOCX 分节纸张属性，包括纸张尺寸、方向、页边距、居中纸张预览、窄屏溢出行为及具名打印页面规则；片段和不带内置 CSS 的完整页面保持流式布局。屏幕预览保留版心宽度，但不实现 Word 自动分页。
+- Apply explicit hyperlink color and underline settings to anchor elements so browser defaults cannot change DOCX link appearance.
+- 将超链接明确的颜色和下划线设置应用到链接元素，避免浏览器默认样式改变 DOCX 外观。
+
+### Tests / 测试
+
+- Add synthetic section-layout tests for page geometry, margins, orientation, print CSS, multiple sections, option boundaries and entry-point parity. Validate the supplied DOCX in Chrome, print-to-PDF, narrow-screen layout and text-order checks.
+- 新增分节布局合成测试，覆盖纸张尺寸、页边距、方向、打印 CSS、多分节、选项边界和入口一致性；在 Chrome、打印 PDF、窄屏布局中验证用户提供的 DOCX，并核对文本顺序。
+
 ## v0.12.1 — 2026-10-03
 
 ### Fixed / 修复

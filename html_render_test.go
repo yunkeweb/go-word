@@ -52,6 +52,35 @@ func TestRenderHTMLBasicDocument(t *testing.T) {
 	}
 }
 
+func TestRenderHTMLStandaloneUsesSectionPageGeometry(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection(style.Section{
+		PageSizeW:    12000,
+		PageSizeH:    16800,
+		MarginTop:    1440,
+		MarginRight:  1800,
+		MarginBottom: 1440,
+		MarginLeft:   1800,
+	})
+	sec.AddText("page geometry")
+	got, err := doc.RenderHTML(HTMLOptions{Standalone: true, IncludeCSS: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		"width:800px;min-height:1120px",
+		"padding:96px 120px 96px 120px",
+		"<p>page geometry</p>",
+		"background:#e7e7e7",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+	assertHTMLStructure(t, s)
+}
+
 func TestRenderHTMLListsTablesAndImage(t *testing.T) {
 	doc := New()
 	sec := doc.AddSection()

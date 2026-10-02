@@ -30,7 +30,7 @@ type HTMLOptions struct {
 	ImageMode             HTMLImageMode
 	ImageURL              func(*element.Image) (string, error)
 	IncludeHeadersFooters bool
-	IncludeCSS            bool
+	IncludeCSS            bool // with Standalone, include built-in CSS and section page geometry
 	Strict                bool
 }
 
@@ -163,6 +163,7 @@ type htmlAttr struct{ name, value string }
 func (r *htmlRenderer) renderDocument(d *Document) {
 	r.document = d
 	r.listCounts = make(map[htmlListKey]int)
+	var pageNames []string
 	if r.opts.Standalone {
 		r.writeString("<!doctype html><html><head><meta charset=\"utf-8\">")
 		title := r.opts.Title
@@ -173,21 +174,33 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 			r.tagText("title", title)
 		}
 		if r.opts.IncludeCSS {
+			r.void("meta", htmlAttr{"name", "viewport"}, htmlAttr{"content", "width=device-width, initial-scale=1"})
 			r.writeString("<style>")
 			r.writeString(defaultHTMLCSS)
+			r.writeString(pageHTMLCSS)
+			pageNames = r.writePageRules(d.sections)
 			r.writeString("</style>")
 		}
-		r.writeString("</head><body>")
+		r.writeString("</head>")
+		if r.opts.IncludeCSS {
+			r.open("body", htmlAttr{"class", "goword-document"})
+		} else {
+			r.open("body")
+		}
 	}
 	multiSection := len(d.sections) > 1
-	for _, sec := range d.sections {
+	pageLayout := r.opts.Standalone && r.opts.IncludeCSS
+	for i, sec := range d.sections {
 		if sec == nil {
 			continue
 		}
-		if multiSection {
+		if multiSection || pageLayout {
 			attrs := []htmlAttr{}
 			if sec.Style.BreakType != "" {
 				attrs = append(attrs, htmlAttr{"data-break-type", sec.Style.BreakType})
+			}
+			if pageLayout {
+				attrs = append(attrs, htmlAttr{"class", "goword-page"}, htmlAttr{"style", sectionPageGeometry(sec.Style).screenStyle() + ";page:" + pageNames[i]})
 			}
 			r.open("section", attrs...)
 		}
@@ -206,7 +219,7 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 				r.close("footer")
 			}
 		}
-		if multiSection {
+		if multiSection || pageLayout {
 			r.close("section")
 		}
 	}
@@ -385,8 +398,14 @@ func (r *htmlRenderer) renderLink(v *element.Link) {
 		r.renderText(v.Text, v.FontStyle)
 		return
 	}
-	r.open("a", htmlAttr{"href", target})
-	r.renderText(v.Text, v.FontStyle)
+	attrs := []htmlAttr{{"href", target}}
+	if css := fontStyle(v.FontStyle); css != "" {
+		// Apply explicit link appearance to the anchor itself. A child span
+		// cannot cancel an ancestor's text decoration or its visited color.
+		attrs = append(attrs, htmlAttr{"style", css})
+	}
+	r.open("a", attrs...)
+	r.text(v.Text)
 	r.close("a")
 }
 
@@ -738,6 +757,8 @@ func fontStyle(v any) string {
 	}
 	if color := cssColor(f.Color); color != "" {
 		p = append(p, "color:"+color)
+	} else if strings.EqualFold(strings.TrimSpace(f.Color), "auto") {
+		p = append(p, "color:inherit")
 	}
 	if color := cssColor(f.BgColor); color != "" {
 		p = append(p, "background-color:"+color)
@@ -748,8 +769,12 @@ func fontStyle(v any) string {
 	if f.Italic {
 		p = append(p, "font-style:italic")
 	}
-	if f.Underline != "" && f.Underline != style.UnderlineNone {
-		p = append(p, "text-decoration:underline")
+	if f.Underline != "" {
+		if f.Underline == style.UnderlineNone {
+			p = append(p, "text-decoration:none")
+		} else {
+			p = append(p, "text-decoration:underline")
+		}
 	}
 	if f.Strikethrough || f.DoubleStrikethrough {
 		p = append(p, "text-decoration:line-through")

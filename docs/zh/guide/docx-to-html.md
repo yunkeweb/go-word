@@ -1,6 +1,6 @@
 # DOCX 转 HTML
 
-从 **v0.12.0** 起提供，**v0.12.1** 补齐 DOCX 样式还原修复。使用 Go 标准库将已加载的文档或 DOCX 文件转换为 HTML 片段或完整页面，无需 Microsoft Word、LibreOffice、cgo 或外部转换进程。
+从 **v0.12.0** 起提供，**v0.12.1** 修复 DOCX 样式还原，**v0.12.2** 修复纸张布局与超链接外观。使用 Go 标准库将已加载的文档或 DOCX 文件转换为 HTML 片段或完整页面，无需 Microsoft Word、LibreOffice、cgo 或外部转换进程。
 
 ## 转换文件
 
@@ -30,7 +30,17 @@ func main() {
 }
 ```
 
-**`RenderHTMLFile` 返回 HTML 字节，不接收输出文件名，也不负责写文件。** 由调用方保存结果。仓库的 [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.1/examples/docx_to_html) 还提供了自动生成输入 DOCX 的可运行示例。
+**`RenderHTMLFile` 返回 HTML 字节，不接收输出文件名，也不负责写文件。** 由调用方保存结果。仓库的 [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.2/examples/docx_to_html) 还提供了自动生成输入 DOCX 的可运行示例。
+
+## 纸张预览与流式内容
+
+从 **v0.12.2** 起，`Standalone: true` 配合 `IncludeCSS: true` 会按照各节的纸张尺寸、方向和页边距显示居中的白色页面。正文在 DOCX 的版心宽度内换行，不再铺满浏览器窗口；负段落缩进可以伸入页边距，避免在视口左侧被裁切。上方完整程序无需更改选项即可启用。
+
+屏幕预览中的长分节会向下延伸，**不复现 Word 的自动分页边界**。窄屏通过横向滚动保留正文行宽。打印使用具名 CSS `@page` 设置纸张和页边距，实际效果取决于浏览器支持及打印设置。设备字体、文档网格、重复页眉页脚及 Word 分页规则仍可能带来视觉差异。
+
+如果内容应随业务页面容器宽度排版，使用 `HTMLOptions{}` 返回片段；如果需要不带纸张预览的完整页面，使用 `HTMLOptions{Standalone: true, IncludeCSS: false}`，再自行提供 CSS。两种方式均保留支持的文字和段落内联格式。
+
+DOCX 明确指定的链接颜色和下划线设置会直接应用到链接元素，包括自动颜色和取消下划线，避免被浏览器默认链接样式覆盖。
 
 ## API 参考
 
@@ -63,7 +73,7 @@ func (d *Document) WriteHTML(w io.Writer, opts HTMLOptions) error
 | --- | --- | --- |
 | `Standalone` | `false` | 开启时添加 doctype、head 和 body，否则返回片段 |
 | `Title` | 空 | 可用时回退到文档元数据中的标题，仅用于完整页面 |
-| `IncludeCSS` | `false` | 仅配合 `Standalone: true` 添加内置 CSS；关闭时仍会输出支持的内联样式 |
+| `IncludeCSS` | `false` | 仅配合 `Standalone: true` 添加内置 CSS 与纸张预览；关闭时仍会输出支持的内联样式 |
 | `IncludeHeadersFooters` | `false` | 输出各节 DOM 中已有的页眉页脚内容 |
 | `ImageMode` | `HTMLImageDataURI` | 嵌入图片字节；`HTMLImageURL` 使用现有来源或目标 URL |
 | `ImageURL` | `nil` | 签名为 `func(*element.Image) (string, error)`，优先于 `ImageMode` |
@@ -150,7 +160,7 @@ if errors.As(err, &unsupported) {
 
 ## 支持范围与限制
 
-以下样式还原能力需要 v0.12.1 或更高版本。
+以下样式还原能力需要 v0.12.1 或更高版本；纸张布局和明确指定的超链接外观修复需要 v0.12.2。
 
 | 内容 | 输出与边界 |
 | --- | --- |
@@ -166,14 +176,17 @@ if errors.As(err, &unsupported) {
 转换目标是可读的 HTML，不保证与 Word 页面逐像素一致。严格模式成功也不代表无损转换；接入新类别文档前，请先验证有代表性的样本。
 
 <a id="升级至-v0-12-0"></a>
+<a id="升级至-v0-12-1"></a>
 
-## 升级至 v0.12.1
+## 升级至 v0.12.2
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.1
+go get github.com/yunkeweb/go-word@v0.12.2
 ```
 
-v0.12.1 恢复支持的 DOCX 样式，并输出更多文字和段落内联 CSS，请更新受影响的 HTML 快照与自定义 CSS。`style.Spacing` 新增 `BeforeSet` 和 `AfterSet`：将对应标记设为 `true` 可保留显式零间距。请使用具名字段初始化，按位置初始化的字面量需要调整。
+v0.12.2 在同时开启 `Standalone` 和 `IncludeCSS` 时增加纸张预览分节容器及打印 CSS，并将明确指定的超链接格式应用到链接元素。请更新受影响的 HTML 快照与自定义 CSS；如果应用自行控制页面布局，可使用片段或关闭 `IncludeCSS`。
+
+从 v0.12.0 或更早版本升级时，还包含 v0.12.1 对 DOCX 样式还原及文字、段落内联 CSS 的修复。`style.Spacing` 新增了 `BeforeSet` 和 `AfterSet`：将对应标记设为 `true` 可保留显式零间距。请使用具名字段初始化，按位置初始化的字面量需要调整。
 
 模块路径和纯 Go 运行要求不变。相较 v0.11.0，HTML API 为新增能力。如果使用过开发快照，请更新 HTML 快照测试和 CSS，适配 section 包裹、列表 `type`/`start` 属性、合并单元格属性以及正确闭合的分页元素。缺失嵌入图片引用现在可能导致严格模式失败。
 

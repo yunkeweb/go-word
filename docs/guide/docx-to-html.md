@@ -1,6 +1,6 @@
 # DOCX to HTML
 
-Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
+Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1** and paper layout and hyperlink appearance fixes in **v0.12.2**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
 ## Convert a file
 
@@ -30,7 +30,17 @@ func main() {
 }
 ```
 
-**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.1/examples/docx_to_html).
+**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.2/examples/docx_to_html).
+
+## Paper preview and flowing content
+
+In **v0.12.2**, `Standalone: true` together with `IncludeCSS: true` uses each section's paper size, orientation and margins for a centered white preview. Text wraps within the DOCX content width instead of filling the browser window. Negative paragraph indents can extend into the page margin without being clipped at the viewport edge. No option changes are required for the complete program above.
+
+The screen preview grows vertically for a long section; it does **not** reproduce Word's automatic page boundaries. Narrow screens scroll horizontally to preserve the document's line width. Printing uses named CSS `@page` rules for paper size and margins, subject to browser support and print settings. Fonts installed on the device, document grids, repeated headers/footers and Word's pagination rules can still cause visual differences.
+
+For content that should flow within your application's own container, use `HTMLOptions{}` to return a fragment. For a standalone page without the paper preview, use `HTMLOptions{Standalone: true, IncludeCSS: false}` and provide your own CSS. Text and paragraph inline formatting remains available in both cases.
+
+Explicit DOCX hyperlink colors and underline settings apply directly to the anchor, including automatic color and no underline, so browser link defaults do not override them.
 
 ## API reference
 
@@ -63,7 +73,7 @@ For in-memory DOCX bytes, use `RenderHTML(bytes.NewReader(raw), opts)`, or load 
 | --- | --- | --- |
 | `Standalone` | `false` | Adds doctype, head and body; otherwise returns a fragment |
 | `Title` | Empty | Uses document metadata when available; applies to standalone output |
-| `IncludeCSS` | `false` | Adds built-in CSS only with `Standalone: true`; basic inline styles are still emitted otherwise |
+| `IncludeCSS` | `false` | Adds built-in CSS and the paper preview only with `Standalone: true`. Basic inline styles are still emitted otherwise |
 | `IncludeHeadersFooters` | `false` | Includes header/footer content present in each section's DOM |
 | `ImageMode` | `HTMLImageDataURI` | Embeds image bytes; `HTMLImageURL` uses existing source/target URLs |
 | `ImageURL` | `nil` | Callback with signature `func(*element.Image) (string, error)`; overrides `ImageMode` |
@@ -150,7 +160,7 @@ Diagnostics cover elements that reach the renderer. They are **not a complete OO
 
 ## Supported content and limits
 
-The style restoration described below requires v0.12.1 or later.
+The style restoration described below requires v0.12.1 or later; paper layout and explicit hyperlink appearance fixes require v0.12.2.
 
 | Content | Output and boundary |
 | --- | --- |
@@ -166,14 +176,17 @@ The style restoration described below requires v0.12.1 or later.
 Conversion aims at readable HTML, not pixel-identical Word pages. A successful strict conversion does not guarantee lossless conversion. Review representative documents before adopting it for a new document family.
 
 <a id="upgrading-to-v0-12-0"></a>
+<a id="upgrading-to-v0-12-1"></a>
 
-## Upgrading to v0.12.1
+## Upgrading to v0.12.2
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.1
+go get github.com/yunkeweb/go-word@v0.12.2
 ```
 
-v0.12.1 restores supported DOCX styles and emits additional inline CSS for text and paragraph formatting. Update affected HTML snapshots and custom CSS. `style.Spacing` adds `BeforeSet` and `AfterSet`: set the corresponding flag to `true` to preserve an explicit zero margin. Use keyed struct literals; positional literals need updating.
+v0.12.2 adds paper-preview section wrappers and print CSS when both `Standalone` and `IncludeCSS` are enabled, and applies explicit hyperlink formatting to anchors. Update affected HTML snapshots and custom CSS. Use fragments or disable `IncludeCSS` if your application controls page layout.
+
+When upgrading from v0.12.0 or earlier, v0.12.1 also restores supported DOCX styles and emits additional inline CSS for text and paragraph formatting. `style.Spacing` gained `BeforeSet` and `AfterSet`: set the corresponding flag to `true` to preserve an explicit zero margin. Use keyed struct literals; positional literals need updating.
 
 The module path and pure-Go runtime requirements are unchanged. HTML APIs are new since v0.11.0. If you used development snapshots, update HTML snapshots/CSS for section wrappers, list `type`/`start` attributes, merged-cell attributes and properly closed page-break elements. Missing embedded-image references can now cause strict mode to fail.
 
