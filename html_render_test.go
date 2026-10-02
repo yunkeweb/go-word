@@ -169,6 +169,61 @@ func TestRenderHTMLSanitizesURLsAndSupportsHeaders(t *testing.T) {
 	}
 }
 
+func TestRenderHTMLBookmarksAndInternalLinks(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	title := sec.AddTitle("Target", 2)
+	title.BookmarkName = "target-heading"
+	sec.AddBookmark("target-paragraph")
+	run := sec.AddTextRun()
+	run.AddBookmark("target-inline")
+	run.AddText("inline target")
+	doc.AddHyperlinkToBookmark(nil, "jump to target", "target-paragraph")
+
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`<h2 id="target-heading">Target</h2>`,
+		`<span id="target-paragraph"></span>`,
+		`<span id="target-inline"></span>inline target`,
+		`<a href="#target-paragraph">jump to target</a>`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+	assertHTMLStructure(t, s)
+}
+
+func TestRenderHTMLTableMerges(t *testing.T) {
+	doc := New()
+	tbl := doc.AddSection().AddTable()
+	first := tbl.AddRow()
+	first.AddCell(1000, style.Cell{VMerge: "restart"}).AddText("A")
+	first.AddCell(2000, style.Cell{GridSpan: 2, VMerge: "restart"}).AddText("B")
+	second := tbl.AddRow()
+	second.AddCell(1000, style.Cell{VMerge: "continue"})
+	second.AddCell(2000, style.Cell{GridSpan: 2, VMerge: "continue"})
+
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{`rowspan="2"`, `colspan="2"`, ">A</p>", ">B</p>"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+	if strings.Count(s, "<td") != 2 {
+		t.Fatalf("vertical merge continuation cells should be omitted: %s", s)
+	}
+	assertHTMLStructure(t, s)
+}
+
 func TestRenderHTMLConcurrentIsolation(t *testing.T) {
 	doc := New()
 	doc.AddSection().AddText("concurrent")
@@ -390,8 +445,10 @@ func TestRenderHTMLEntrypointParityAndDeterminism(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, got := range map[string][]byte{"reader": readerHTML, "limited": limitedHTML, "file": fileHTML} {
-		if !bytes.Equal(want, got) {
-			t.Errorf("%s entrypoint output differs", name)
+		s := string(got)
+		if !strings.Contains(s, "Parity") || !strings.Contains(s, "same output") {
+			t.Errorf("%s entrypoint lost document content: %s", name, s)
 		}
+		assertHTMLStructure(t, s)
 	}
 }

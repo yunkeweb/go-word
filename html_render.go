@@ -245,13 +245,20 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 			depth = 6
 		}
 		tag := "h" + strconv.Itoa(depth)
-		r.open(tag)
+		attrs := []htmlAttr{}
+		if v.BookmarkName != "" {
+			attrs = append(attrs, htmlAttr{"id", v.BookmarkName})
+		}
+		r.open(tag, attrs...)
 		if v.Run != nil {
 			r.renderInlineElements(v.Run.Elements())
 		} else {
 			r.text(v.Text)
 		}
 		r.close(tag)
+	case *element.Bookmark:
+		r.open("span", htmlAttr{"id", v.Name})
+		r.close("span")
 	case *element.Link:
 		r.open("p")
 		r.renderLink(v)
@@ -320,6 +327,9 @@ func (r *htmlRenderer) renderInlineElements(elements []element.Element) {
 			r.renderInlineElements(v.Elements())
 		case *element.ListItemRun:
 			r.renderInlineElements(v.Elements())
+		case *element.Bookmark:
+			r.open("span", htmlAttr{"id", v.Name})
+			r.close("span")
 		case *element.CheckBox:
 			r.void("input", htmlAttr{"type", "checkbox"}, htmlAttr{"disabled", "disabled"})
 			r.renderText(v.Content, v.FontStyle)
@@ -357,6 +367,7 @@ func (r *htmlRenderer) renderLink(v *element.Link) {
 }
 
 func (r *htmlRenderer) renderTable(t *element.Table) {
+	rowspan, skip := tableVerticalMerges(t)
 	attrs := []htmlAttr{}
 	if st := tableStyle(t.Style); st != "" {
 		attrs = append(attrs, htmlAttr{"style", st})
@@ -366,9 +377,15 @@ func (r *htmlRenderer) renderTable(t *element.Table) {
 	for _, row := range t.Rows {
 		r.open("tr")
 		for _, cell := range row.Cells {
+			if skip[cell] {
+				continue
+			}
 			attrs := []htmlAttr{}
 			if cell.Style.GridSpan > 1 {
 				attrs = append(attrs, htmlAttr{"colspan", strconv.Itoa(cell.Style.GridSpan)})
+			}
+			if rowspan[cell] > 1 {
+				attrs = append(attrs, htmlAttr{"rowspan", strconv.Itoa(rowspan[cell])})
 			}
 			if st := cellStyle(cell.Style); st != "" {
 				attrs = append(attrs, htmlAttr{"style", st})
@@ -381,6 +398,59 @@ func (r *htmlRenderer) renderTable(t *element.Table) {
 	}
 	r.close("tbody")
 	r.close("table")
+}
+
+func tableVerticalMerges(t *element.Table) (map[*element.Cell]int, map[*element.Cell]bool) {
+	rowspan := make(map[*element.Cell]int)
+	skip := make(map[*element.Cell]bool)
+	active := make(map[int]*htmlMergeState)
+	for _, row := range t.Rows {
+		seen := make(map[*htmlMergeState]bool)
+		for _, state := range active {
+			if !seen[state] {
+				state.counted = false
+				seen[state] = true
+			}
+		}
+		next := make(map[int]*htmlMergeState)
+		col := 0
+		for _, cell := range row.Cells {
+			if cell.Style.VMerge == "continue" {
+				if state := active[col]; state != nil {
+					if !state.counted {
+						rowspan[state.root]++
+						state.counted = true
+					}
+					skip[cell] = true
+					for offset := 0; offset < state.span; offset++ {
+						next[col+offset] = state
+					}
+					col += state.span
+					continue
+				}
+			}
+			span := cell.Style.GridSpan
+			if span < 1 {
+				span = 1
+			}
+			if cell.Style.VMerge == "restart" {
+				rowspan[cell] = 1
+				state := &htmlMergeState{root: cell, span: span}
+				for offset := 0; offset < span; offset++ {
+					next[col+offset] = state
+				}
+			}
+			col += span
+		}
+		active = next
+	}
+	return rowspan, skip
+}
+
+type htmlMergeState struct {
+	root    *element.Cell
+	span    int
+	counted bool
 }
 
 func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) int {
