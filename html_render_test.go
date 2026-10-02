@@ -322,8 +322,8 @@ func TestRenderHTMLLargeDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(string(got), "<p>") < 500 {
-		t.Fatalf("large document rendered too few paragraphs: %d", strings.Count(string(got), "<p>"))
+	if strings.Count(string(got), "</p>") < 500 {
+		t.Fatalf("large document rendered too few paragraphs: %d", strings.Count(string(got), "</p>"))
 	}
 	assertHTMLStructure(t, string(got))
 }

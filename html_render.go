@@ -232,7 +232,7 @@ func (r *htmlRenderer) renderElements(elements []element.Element) {
 func (r *htmlRenderer) renderBlock(el element.Element) {
 	switch v := el.(type) {
 	case *element.Text:
-		r.openStyled("p", paragraphStyle(v.ParagraphStyle))
+		r.openStyled("p", paragraphTextStyle(v.ParagraphStyle, []element.Element{v}))
 		r.renderText(v.Content, v.FontStyle)
 		r.close("p")
 	case *element.PreserveText:
@@ -240,7 +240,7 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 		r.renderText(v.Content, v.FontStyle)
 		r.close("p")
 	case *element.TextRun:
-		r.openStyled("p", paragraphStyle(v.ParagraphStyle))
+		r.openStyled("p", paragraphTextStyle(v.ParagraphStyle, v.Elements()))
 		r.renderInlineElements(v.Elements())
 		r.close("p")
 	case *element.ListItem:
@@ -263,6 +263,12 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 		attrs := []htmlAttr{}
 		if v.BookmarkName != "" {
 			attrs = append(attrs, htmlAttr{"id", v.BookmarkName})
+		}
+		if v.Run != nil {
+			// A loaded heading's run formatting overrides the browser's h1-h6
+			// defaults, including the font size used to calculate its line box.
+			css := paragraphTextStyle(v.Run.ParagraphStyle, v.Run.Elements())
+			attrs = append(attrs, htmlAttr{"style", "font-size:inherit;font-weight:normal;" + css})
 		}
 		r.open(tag, attrs...)
 		if v.Run != nil {
@@ -339,6 +345,8 @@ func (r *htmlRenderer) renderInlineElements(elements []element.Element) {
 			r.renderLink(v)
 		case *element.Image:
 			r.renderImage(v)
+		case *element.TextBreak:
+			r.void("br")
 		case *element.TextRun:
 			r.renderInlineElements(v.Elements())
 		case *element.ListItemRun:
@@ -487,6 +495,8 @@ func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) 
 		attrs = append(attrs, htmlAttr{"type", "a"})
 	case style.NumberDecimalZero:
 		attrs = append(attrs, htmlAttr{"style", "list-style-type:decimal-leading-zero"})
+	case style.NumberChineseCounting, style.NumberChineseCountingThousand:
+		attrs = append(attrs, htmlAttr{"style", "list-style-type:cjk-ideographic"})
 	}
 	if list.ListType == style.ListTypeNone || list.Format == style.NumberNone {
 		attrs = []htmlAttr{{"style", "list-style-type:none"}}
@@ -505,7 +515,14 @@ func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) 
 		if !isListElement(elements[i]) || listDepth(elements[i]) != depth || r.listStyle(elements[i]) != list {
 			break
 		}
-		r.open("li")
+		var css string
+		switch v := elements[i].(type) {
+		case *element.ListItem:
+			css = paragraphTextStyle(v.ParagraphStyle, []element.Element{v})
+		case *element.ListItemRun:
+			css = paragraphTextStyle(v.ParagraphStyle, v.Elements())
+		}
+		r.openStyled("li", css)
 		switch v := elements[i].(type) {
 		case *element.ListItem:
 			r.renderText(v.Text, v.FontStyle)
@@ -719,11 +736,11 @@ func fontStyle(v any) string {
 	if f.Size > 0 {
 		p = append(p, "font-size:"+formatFloat(f.Size)+"pt")
 	}
-	if f.Color != "" {
-		p = append(p, "color:"+cssColor(f.Color))
+	if color := cssColor(f.Color); color != "" {
+		p = append(p, "color:"+color)
 	}
-	if f.BgColor != "" {
-		p = append(p, "background-color:"+cssColor(f.BgColor))
+	if color := cssColor(f.BgColor); color != "" {
+		p = append(p, "background-color:"+color)
 	}
 	if f.Bold {
 		p = append(p, "font-weight:700")
@@ -757,6 +774,43 @@ func fontStyle(v any) string {
 	}
 	return strings.Join(p, ";")
 }
+
+// Keep the block's font size consistent with its text, so line-height in em
+// units and list markers do not use unrelated browser defaults.
+func paragraphTextStyle(para any, elements []element.Element) string {
+	css := paragraphStyle(para)
+	if size := paragraphFontSize(elements); size > 0 {
+		if css != "" {
+			css += ";"
+		}
+		css += "font-size:" + formatFloat(size) + "pt"
+	}
+	return css
+}
+
+func paragraphFontSize(elements []element.Element) float64 {
+	var size float64
+	for _, el := range elements {
+		var font any
+		switch v := el.(type) {
+		case *element.Text:
+			font = v.FontStyle
+		case *element.Link:
+			font = v.FontStyle
+		case *element.ListItem:
+			font = v.FontStyle
+		case *element.TextRun:
+			if n := paragraphFontSize(v.Elements()); n > size {
+				size = n
+			}
+		}
+		if f, ok := asFont(font); ok && f.Size > size && !f.Hidden {
+			size = f.Size
+		}
+	}
+	return size
+}
+
 func paragraphStyle(v any) string {
 	p, ok := asParagraph(v)
 	if !ok {
@@ -772,14 +826,28 @@ func paragraphStyle(v any) string {
 	if p.Indentation.Right != 0 {
 		out = append(out, "margin-right:"+twipsPx(p.Indentation.Right))
 	}
-	if p.Indentation.FirstLine != 0 {
+	if p.Indentation.Hanging != 0 {
+		out = append(out, "text-indent:"+twipsPx(-p.Indentation.Hanging))
+	} else if p.Indentation.FirstLine != 0 {
 		out = append(out, "text-indent:"+twipsPx(p.Indentation.FirstLine))
 	}
-	if p.Spacing.Before != 0 {
+	if p.Spacing.Before != 0 || p.Spacing.BeforeSet {
 		out = append(out, "margin-top:"+twipsPx(p.Spacing.Before))
 	}
-	if p.Spacing.After != 0 {
+	if p.Spacing.After != 0 || p.Spacing.AfterSet {
 		out = append(out, "margin-bottom:"+twipsPx(p.Spacing.After))
+	}
+	if p.Spacing.Line > 0 {
+		line := ""
+		switch p.Spacing.Rule {
+		case "exact":
+			line = twipsPx(p.Spacing.Line)
+		case "atLeast":
+			line = "max(1.2em," + twipsPx(p.Spacing.Line) + ")"
+		default:
+			line = formatFloat(float64(p.Spacing.Line) / 240)
+		}
+		out = append(out, "line-height:"+line)
 	}
 	if p.PageBreakBefore {
 		out = append(out, "break-before:page")
@@ -860,8 +928,12 @@ func cssString(s string) string {
 }
 func cssColor(s string) string {
 	s = strings.TrimSpace(s)
-	if s == "" {
+	if s == "" || strings.EqualFold(s, "auto") {
 		return ""
+	}
+	// OOXML RGB colors omit the '#' required by CSS.
+	if len(s) == 6 && strings.Trim(s, "0123456789abcdefABCDEF") == "" {
+		return "#" + s
 	}
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("#%,. -+", r) {

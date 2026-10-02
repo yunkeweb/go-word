@@ -11,10 +11,12 @@ type Indentation struct {
 
 // Spacing is paragraph spacing in twips (before/after) and line rule.
 type Spacing struct {
-	Before int
-	After  int
-	Line   int
-	Rule   string // auto, exact, atLeast
+	Before    int
+	After     int
+	Line      int
+	Rule      string // auto, exact, atLeast
+	BeforeSet bool   // preserve an explicitly specified Before value, including zero
+	AfterSet  bool   // preserve an explicitly specified After value, including zero
 }
 
 // Tab is a custom tab stop.
@@ -51,26 +53,26 @@ type Shading struct {
 
 // Paragraph is a paragraph property set (PHPWord Style\Paragraph).
 type Paragraph struct {
-	Alignment       string
-	BasedOn         string
-	Next            string
-	Indentation     Indentation
-	Spacing         Spacing
-	WidowControl    *bool
-	KeepNext        bool
-	KeepLines       bool
-	PageBreakBefore bool
-	Bidi            bool
-	OutlineLevel    int // 0 = unset; 1-9 = heading level
-	Tabs            []Tab
-	Shading         Shading
-	Borders         Borders
-	NumStyle             string
-	NumLevel             int
-	StyleName            string
-	ContextualSpacing    bool
-	TextAlignment        string
-	SuppressAutoHyphens  bool
+	Alignment           string
+	BasedOn             string
+	Next                string
+	Indentation         Indentation
+	Spacing             Spacing
+	WidowControl        *bool
+	KeepNext            bool
+	KeepLines           bool
+	PageBreakBefore     bool
+	Bidi                bool
+	OutlineLevel        int // 0 = unset; 1-9 = heading level
+	Tabs                []Tab
+	Shading             Shading
+	Borders             Borders
+	NumStyle            string
+	NumLevel            int
+	StyleName           string
+	ContextualSpacing   bool
+	TextAlignment       string
+	SuppressAutoHyphens bool
 }
 
 // IsZero reports whether p has no paragraph properties set.

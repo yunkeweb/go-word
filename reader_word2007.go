@@ -79,6 +79,15 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, e
 	}
+	var styles *wordStyleSheet
+	if stylesRaw, e := zr.ReadFileWithLimit("word/styles.xml", opts.partLimit()); e == nil {
+		styles, err = parseWordStyles(stylesRaw)
+		if err != nil {
+			return nil, err
+		}
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return nil, e
+	}
 	images := map[string]documentImage{}
 	for id, rel := range rels {
 		if !strings.HasSuffix(rel.Type, "/image") || strings.Contains(rel.Target, "://") {
@@ -103,7 +112,7 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	}
 	for _, parsed := range sections {
 		sec := doc.AddSection(parsed.style)
-		if err := parseDocumentXMLRelsImages(parsed.body, sec, relationshipTargets(rels), listStyles, images); err != nil {
+		if err := parseDocumentXMLRelsImagesWithStyles(parsed.body, sec, relationshipTargets(rels), listStyles, images, styles); err != nil {
 			return nil, err
 		}
 		if err := loadSectionParts(zr, opts, sec, parsed.sectPr, rels); err != nil {
@@ -538,6 +547,10 @@ func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]str
 }
 
 func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem, images map[string]documentImage) error {
+	return parseDocumentXMLRelsImagesWithStyles(data, sec, rels, listStyles, images, nil)
+}
+
+func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem, images map[string]documentImage, styles *wordStyleSheet) error {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
 		frames        []tblFrame
@@ -545,13 +558,9 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 		runBuf        strings.Builder
 		hyperTarget   string
 		hyperInternal bool
-		hyperText     strings.Builder
-		pStyle        string
-		pNumID        int
-		pLevel        int
+		paraFormat    wordParagraphFormat
 		bodyRun       *element.TextRun
-		bold, italic  bool
-		color         string
+		font          style.Font
 		track         *element.TrackChange
 	)
 	currentCell := func() *element.Cell {
@@ -573,19 +582,9 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 		}
 		return bodyRun
 	}
-	headingDepth := func(name string) int {
-		depth := 1
-		if len(name) > 7 {
-			depth = int(name[7] - '0')
-			if depth < 1 {
-				depth = 1
-			}
-		}
-		return depth
-	}
 	runFont := func() any {
-		if bold || italic || color != "" {
-			return style.Font{Bold: bold, Italic: italic, Color: color}
+		if !font.IsZero() {
+			return font
 		}
 		return nil
 	}
@@ -596,7 +595,8 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 			return
 		}
 		if inHyper {
-			hyperText.WriteString(t)
+			link := currentRun().AddLink(hyperTarget, t, runFont(), nil, hyperInternal)
+			link.SetTrackChange(track)
 			return
 		}
 		tx := currentRun().AddText(t, runFont())
@@ -606,105 +606,59 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 	}
 	flushHyperlink := func() {
 		flushRun()
-		target, text, internal := hyperTarget, hyperText.String(), hyperInternal
-		hyperText.Reset()
 		hyperTarget = ""
 		hyperInternal = false
 		inHyper = false
-		if target == "" && text == "" {
-			return
-		}
-		currentRun().AddLink(target, text, nil, nil, internal)
 	}
 	flushPara := func() {
 		flushRun()
+		pNumID, pLevel := paraFormat.numID, paraFormat.level
+		para := paraFormat.para
 		listStyle := style.ListItem{NumId: pNumID, Depth: pLevel, ListType: style.ListTypeNumber, Format: style.NumberDecimal}
 		if levels := listStyles[pNumID]; levels != nil {
 			if level, ok := levels[pLevel]; ok {
 				listStyle = level
 			}
 		}
+		container, run := &sec.Container, bodyRun
 		if c := currentCell(); c != nil {
-			f := &frames[len(frames)-1]
-			if f.para != nil {
-				f.para.SetParagraphStyle(pStyle)
-				els := f.para.Elements()
-				if len(els) == 0 {
-					c.RemoveElement(f.para)
-				} else if pNumID > 0 {
-					c.RemoveElement(f.para)
-					item := c.AddListItemRun(pLevel, listStyle, pStyle)
-					for _, el := range els {
-						item.AppendElement(el)
-					}
-				} else if len(els) == 1 {
-					if tx, ok := els[0].(*element.Text); ok {
-						c.RemoveElement(f.para)
-						out := c.AddText(tx.Content, tx.FontStyle, pStyle)
-						out.SetTrackChange(tx.GetTrackChange())
-					}
-				}
-				f.para = nil
-			}
-			pStyle = ""
-			pNumID, pLevel = 0, 0
-			bold, italic, color = false, false, ""
-			return
+			container = &c.Container
+			run = frames[len(frames)-1].para
+			frames[len(frames)-1].para = nil
+		} else {
+			bodyRun = nil
 		}
-		text := ""
-		if bodyRun != nil {
-			text = bodyRun.GetText()
-		}
-		if strings.HasPrefix(pStyle, "Heading") {
-			if bodyRun != nil {
-				sec.RemoveElement(bodyRun)
-				bodyRun = nil
-			}
-			if text != "" {
-				sec.AddTitle(text, headingDepth(pStyle))
-			}
-			pStyle = ""
-			bold, italic, color = false, false, ""
-			return
-		}
-		if bodyRun != nil {
-			els := bodyRun.Elements()
+		if run != nil {
+			run.SetParagraphStyle(para)
+			els := run.Elements()
 			switch {
 			case len(els) == 0:
-				sec.RemoveElement(bodyRun)
+				container.RemoveElement(run)
+			case para.OutlineLevel > 0 && pNumID == 0:
+				container.RemoveElement(run)
+				title := container.AddTitle(run.GetText(), para.OutlineLevel)
+				title.Run = run
 			case pNumID > 0 && (len(els) != 1 || !isTextElement(els[0])):
-				sec.RemoveElement(bodyRun)
-				item := sec.AddListItemRun(pLevel, listStyle, pStyle)
+				container.RemoveElement(run)
+				item := container.AddListItemRun(pLevel, listStyle, para)
 				for _, el := range els {
 					item.AppendElement(el)
 				}
 			case len(els) == 1:
 				if tx, ok := els[0].(*element.Text); ok {
-					sec.RemoveElement(bodyRun)
-					var para any
-					if pStyle != "" {
-						para = pStyle
-					}
+					container.RemoveElement(run)
 					if pNumID > 0 {
-						item := sec.AddListItem(tx.Content, pLevel, tx.FontStyle, para, listStyle)
+						item := container.AddListItem(tx.Content, pLevel, tx.FontStyle, para, listStyle)
 						item.SetTrackChange(tx.GetTrackChange())
 					} else {
-						out := sec.AddText(tx.Content, tx.FontStyle, para)
+						out := container.AddText(tx.Content, tx.FontStyle, para)
 						out.SetTrackChange(tx.GetTrackChange())
 					}
-				} else if pStyle != "" {
-					bodyRun.SetParagraphStyle(pStyle)
-				}
-			default:
-				if pStyle != "" {
-					bodyRun.SetParagraphStyle(pStyle)
 				}
 			}
-			bodyRun = nil
 		}
-		pStyle = ""
-		pNumID, pLevel = 0, 0
-		bold, italic, color = false, false, ""
+		paraFormat = wordParagraphFormat{}
+		font = style.Font{}
 	}
 
 	for {
@@ -720,20 +674,28 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 			local := localName(t.Name)
 			switch local {
 			case "p":
-				pStyle = ""
+				paraFormat = styles.paragraph(wordParagraphProperties{})
 				if c := currentCell(); c != nil {
 					frames[len(frames)-1].para = c.AddTextRun()
 				} else {
 					bodyRun = sec.AddTextRun()
 				}
-			case "pStyle":
-				pStyle = attr(t, "val")
+			case "pPr":
+				var properties wordParagraphProperties
+				if err := dec.DecodeElement(&properties, &t); err != nil {
+					return err
+				}
+				paraFormat = styles.paragraph(properties)
+			case "r":
+				font = paraFormat.font
+			case "rPr":
+				var properties wordRunProperties
+				if err := dec.DecodeElement(&properties, &t); err != nil {
+					return err
+				}
+				font = styles.font(paraFormat.font, properties)
 			case "ins", "del":
 				track = &element.TrackChange{ChangeType: local, Author: attr(t, "author"), Date: attr(t, "date")}
-			case "ilvl":
-				pLevel = atoi(attr(t, "val"))
-			case "numId":
-				pNumID = atoi(attr(t, "val"))
 			case "hyperlink":
 				flushRun()
 				inHyper = true
@@ -829,17 +791,7 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 					return err
 				}
 				runBuf.WriteString(s)
-			case "b":
-				if attr(t, "val") != "0" && attr(t, "val") != "false" {
-					bold = true
-				}
-			case "i":
-				if attr(t, "val") != "0" && attr(t, "val") != "false" {
-					italic = true
-				}
-			case "color":
-				color = attr(t, "val")
-			case "br":
+			case "br", "cr":
 				if attr(t, "type") == "page" {
 					if currentCell() != nil {
 						flushPara()
@@ -848,6 +800,9 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 						flushPara()
 						sec.AddPageBreak()
 					}
+				} else {
+					flushRun()
+					currentRun().AddTextBreak()
 				}
 			case "drawing":
 				rid, width, height, alt := parseDrawing(dec)
@@ -887,7 +842,7 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 			switch local {
 			case "r":
 				flushRun()
-				bold, italic, color = false, false, ""
+				font = style.Font{}
 			case "p":
 				flushPara()
 			case "hyperlink":

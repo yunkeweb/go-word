@@ -5,7 +5,7 @@ import (
 	"github.com/yunkeweb/go-word/style"
 )
 
-// TextBreak is an empty paragraph.
+// TextBreak is an empty paragraph, or a line break inside a TextRun.
 type TextBreak struct{ Base }
 
 func (t *TextBreak) Type() string { return "TextBreak" }

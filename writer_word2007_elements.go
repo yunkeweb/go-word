@@ -65,8 +65,14 @@ func (w *word2007Writer) writeElement(xw *common.XMLWriter, el element.Element, 
 	case *element.TextRun:
 		w.writeTextRun(xw, v)
 	case *element.TextBreak:
-		xw.Start("w:p")
-		xw.End()
+		if inline {
+			xw.Start("w:r")
+			xw.Empty("w:br")
+			xw.End()
+		} else {
+			xw.Start("w:p")
+			xw.End()
+		}
 	case *element.PageBreak:
 		xw.Start("w:p")
 		xw.Start("w:r")
@@ -312,6 +318,14 @@ func (w *word2007Writer) writeTitle(xw *common.XMLWriter, t *element.Title) {
 	xw.Start("w:p")
 	xw.Start("w:pPr")
 	xw.Empty("w:pStyle", "w:val", headingStyleName(t.Depth))
+	if t.Run != nil {
+		_, para := splitPara(t.Run.ParagraphStyle)
+		if para != nil {
+			p := *para
+			p.OutlineLevel = 0 // emitted once below, after the other properties
+			w.writePPrInner(xw, p)
+		}
+	}
 	lvl := t.Depth - 1
 	if lvl < 0 {
 		lvl = 0
@@ -324,9 +338,15 @@ func (w *word2007Writer) writeTitle(xw *common.XMLWriter, t *element.Title) {
 		bkID = itoa(w.bkIndex)
 		xw.Empty("w:bookmarkStart", "w:id", bkID, "w:name", t.BookmarkName)
 	}
-	xw.Start("w:r")
-	xw.WT(t.Text)
-	xw.End()
+	if t.Run != nil {
+		for _, el := range t.Run.Elements() {
+			w.writeElement(xw, el, true)
+		}
+	} else {
+		xw.Start("w:r")
+		xw.WT(t.Text)
+		xw.End()
+	}
 	if bkID != "" {
 		xw.Empty("w:bookmarkEnd", "w:id", bkID)
 	}
@@ -1604,12 +1624,12 @@ func (w *word2007Writer) writePPrInner(xw *common.XMLWriter, p style.Paragraph) 
 	if p.Bidi {
 		xw.Empty("w:bidi")
 	}
-	if p.Spacing.Before != 0 || p.Spacing.After != 0 || p.Spacing.Line != 0 {
+	if p.Spacing.Before != 0 || p.Spacing.After != 0 || p.Spacing.Line != 0 || p.Spacing.BeforeSet || p.Spacing.AfterSet {
 		attrs := []string{}
-		if p.Spacing.Before != 0 {
+		if p.Spacing.Before != 0 || p.Spacing.BeforeSet {
 			attrs = append(attrs, "w:before", itoa(p.Spacing.Before))
 		}
-		if p.Spacing.After != 0 {
+		if p.Spacing.After != 0 || p.Spacing.AfterSet {
 			attrs = append(attrs, "w:after", itoa(p.Spacing.After))
 		}
 		if p.Spacing.Line != 0 {

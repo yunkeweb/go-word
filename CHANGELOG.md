@@ -2,6 +2,27 @@
 
 ## Unreleased / 开发中
 
+## v0.12.1 — 2026-10-03
+
+### Fixed / 修复
+
+- Restore common DOCX body and table-cell formatting from document defaults, default paragraph styles, named paragraph/character styles and `basedOn` inheritance. Preserve direct overrides, including explicit false/none/zero values, and safely handle missing or cyclic parent styles.
+- 从文档默认样式、默认段落样式、具名段落/字符样式及 `basedOn` 继承恢复正文和表格单元格的常用格式；保留直接格式覆盖（包括显式 false/none/零值），并安全处理缺失或循环父样式。
+- Preserve fonts, sizes, underlining, shading, paragraph alignment, indentation, spacing and line-spacing rules in HTML. Recognize headings with numeric style IDs and retain their formatted text runs; normalize OOXML RGB colors for CSS and render Chinese counting lists with their start values.
+- HTML 保留字体、字号、下划线、背景色、段落对齐、缩进、段间距及行距规则；识别数字样式 ID 的标题并保留其文本 run 格式；将 OOXML RGB 颜色转换为有效 CSS，并保留中文计数编号及起始值。
+- Retain inline `w:br` / `w:cr` breaks and hyperlink run formatting in their original text order. DOCX round trips retain inline breaks and formatted heading runs.
+- 按原始文本顺序保留行内 `w:br` / `w:cr` 换行及超链接 run 格式；DOCX 往返保留行内换行和标题文本 run 格式。
+
+### Tests / 测试
+
+- Add synthetic OOXML regression fixtures for style inheritance, direct overrides, headings, numbering, colors, line spacing, hyperlinks and DOCX round trips, without including user documents.
+- 新增独立构造的 OOXML 回归用例，覆盖样式继承、直接格式覆盖、标题、编号、颜色、行距、超链接和 DOCX 往返，不包含用户原始文档。
+
+### Upgrade notes / 升级说明
+
+- `style.Spacing` adds `BeforeSet` and `AfterSet` to preserve explicit zero spacing. Use keyed struct literals; positional literals need updating. Imported HTML now includes more inline formatting, so update affected snapshots and custom CSS.
+- `style.Spacing` 新增 `BeforeSet` 和 `AfterSet`，用于保留显式零间距。请使用具名字段初始化，按位置初始化的字面量需要调整。导入后输出的 HTML 会包含更多内联格式，请相应更新快照测试与自定义 CSS。
+
 ## v0.12.0 — 2026-10-02
 
 ### Added / 新增

@@ -22,7 +22,7 @@ func TestMainRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "DOCX to HTML") || !strings.Contains(string(raw), "<h1>") {
+	if !strings.Contains(string(raw), "DOCX to HTML") || !strings.Contains(string(raw), "<h1") || !strings.Contains(string(raw), "</h1>") {
 		t.Fatalf("unexpected HTML output: %s", raw)
 	}
 }
