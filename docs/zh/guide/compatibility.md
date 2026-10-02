@@ -112,4 +112,4 @@ html, err := doc.RenderHTML(word.HTMLOptions{
 })
 ```
 
-输入仍是文件或 Reader 时，可使用 `word.RenderHTMLFile` 或 `word.RenderHTMLWithOptions`。图片默认嵌入 data URI；如果资源由 Web 服务单独提供，可设置 `ImageMode: word.HTMLImageURL` 或提供 `ImageURL` 回调。图表、复杂形状等无法无损映射的元素会通过 `RenderHTMLWithDiagnostics` 报告；启用 `Strict: true` 后会直接返回错误。
+输入仍是文件或 Reader 时，可使用 `word.RenderHTMLFile` 或 `word.RenderHTMLWithOptions`，返回字节由调用方保存。图片默认嵌入 data URI；`ImageURL` 回调负责保存资源并返回公开 URL，`HTMLImageURL` 则复用已有 URL，均不会自动托管媒体文件。`RenderHTMLWithDiagnostics` 报告保留在 DOM 中的未支持元素；`Strict: true` 将这些诊断转为错误。读取阶段遗漏的内容无法由渲染器诊断，严格模式成功不代表无损转换。完整程序、支持范围和读取限制见 [DOCX 转 HTML 指南](./docx-to-html)。

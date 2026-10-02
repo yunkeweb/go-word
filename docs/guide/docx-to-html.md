@@ -1,75 +1,176 @@
 # DOCX to HTML
 
-GoWord can read a `.docx` package and render the reconstructed document as an HTML fragment or a standalone page. The conversion uses the standard library only and does not require Microsoft Word, LibreOffice, cgo, or an external runtime.
+Available in **v0.12.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
-## File conversion
+## Convert a file
 
-Use `RenderHTMLFile` when the source is a path:
+Save this complete program as `main.go`, place `input.docx` next to it, and run `go run main.go`:
 
 ```go
 package main
 
 import (
-    "log"
+	"log"
+	"os"
 
-    "github.com/yunkeweb/go-word/element"
-    word "github.com/yunkeweb/go-word"
+	word "github.com/yunkeweb/go-word"
 )
 
 func main() {
-    err := word.RenderHTMLFile("input.docx", "output.html", word.HTMLOptions{
-        Standalone: true,
-        IncludeCSS: true,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
+	html, err := word.RenderHTMLFile("input.docx", word.HTMLOptions{
+		Standalone: true,
+		IncludeCSS: true,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile("output.html", html, 0o644); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
 
-For an already loaded document, call `RenderHTML`. For an `io.Reader`, use `RenderHTMLWithOptions`:
+**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.0/examples/docx_to_html).
+
+## API reference
+
+These signatures belong to package `word`; `io.Reader` and `io.Writer` are standard-library interfaces.
 
 ```go
-html, err := doc.RenderHTML(word.HTMLOptions{
-    Standalone: true,
-    IncludeCSS: true,
-    IncludeHeadersFooters: true,
-})
+func RenderHTML(r io.Reader, opts HTMLOptions) ([]byte, error)
+func RenderHTMLFile(path string, opts HTMLOptions) ([]byte, error)
+func RenderHTMLWithOptions(r io.Reader, readOpts ReadOptions, htmlOpts HTMLOptions) ([]byte, error)
+func RenderHTMLFileWithOptions(path string, readOpts ReadOptions, htmlOpts HTMLOptions) ([]byte, error)
+func (d *Document) RenderHTML(opts HTMLOptions) ([]byte, error)
+func (d *Document) RenderHTMLWithDiagnostics(opts HTMLOptions) (HTMLRenderResult, error)
+func (d *Document) WriteHTML(w io.Writer, opts HTMLOptions) error
 ```
 
-`Standalone` adds the document shell and `IncludeCSS` adds the built-in layout rules. Leave both disabled when embedding the returned fragment into an existing page.
+| Parameter | Meaning |
+| --- | --- |
+| `path` | Input DOCX filename |
+| `r` | Reader containing the DOCX package, not HTML |
+| `d` | Loaded or programmatically created document |
+| `w` | Destination writer; the caller owns flushing and closing it |
+| `readOpts` | Per-call ZIP limits; zero means unlimited |
+| `opts` / `htmlOpts` | HTML output options below |
+
+For in-memory DOCX bytes, use `RenderHTML(bytes.NewReader(raw), opts)`, or load them with `LoadBytesWithOptions` before inspecting conversion diagnostics.
+
+### HTML options
+
+| Field | Default | Behavior |
+| --- | --- | --- |
+| `Standalone` | `false` | Adds doctype, head and body; otherwise returns a fragment |
+| `Title` | Empty | Uses document metadata when available; applies to standalone output |
+| `IncludeCSS` | `false` | Adds built-in CSS only with `Standalone: true`; basic inline styles are still emitted otherwise |
+| `IncludeHeadersFooters` | `false` | Includes header/footer content present in each section's DOM |
+| `ImageMode` | `HTMLImageDataURI` | Embeds image bytes; `HTMLImageURL` uses existing source/target URLs |
+| `ImageURL` | `nil` | Callback with signature `func(*element.Image) (string, error)`; overrides `ImageMode` |
+| `Strict` | `false` | Returns `*HTMLUnsupportedError` when the renderer records diagnostics |
+
+Repeated rendering of an unchanged document produces the same bytes when callbacks are deterministic. Keep documents and their resources immutable while rendering concurrently.
+
+## Stream HTML with read limits
+
+This alternative complete program loads a DOCX with explicit ZIP budgets, then writes HTML directly to a file:
+
+```go
+package main
+
+import (
+	"log"
+	"os"
+
+	word "github.com/yunkeweb/go-word"
+)
+
+func main() {
+	doc, err := word.LoadWithOptions("input.docx", word.ReadOptions{
+		MaxArchiveSize: 32 << 20,
+		MaxPartSize:    16 << 20,
+		MaxTotalSize:   128 << 20,
+		MaxEntries:     2000,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	out, err := os.Create("output.html")
+	if err != nil {
+		log.Fatal(err)
+	}
+	renderErr := doc.WriteHTML(out, word.HTMLOptions{
+		Standalone:            true,
+		IncludeCSS:            true,
+		IncludeHeadersFooters: true,
+		Strict:                true,
+	})
+	closeErr := out.Close()
+	if renderErr != nil {
+		log.Fatal(renderErr)
+	}
+	if closeErr != nil {
+		log.Fatal(closeErr)
+	}
+}
+```
+
+The limits are examples: choose values appropriate to your documents. Negative limits are rejected. Use `errors.Is(err, word.ErrReadLimitExceeded)` to recognize a read-budget failure.
+
+`WriteHTML` avoids building a full HTML byte buffer, but DOCX loading still builds an in-memory DOM, and image encoding uses memory. A write failure or strict-mode error may occur **after partial output has been written**. Stage output in a temporary file and publish it only on success when incomplete output must never become visible. For an HTTP response that must return an error before headers are sent, render to bytes first.
 
 ## Images and assets
 
-Images are embedded as data URIs by default, which makes the returned HTML self-contained. To serve image files separately, use `HTMLImageURL` or provide an `ImageURL` callback:
+Data URI mode embeds available image data and emits alt text and dimensions from the DOM. It does not retrieve linked remote images.
+
+For separate assets, supply `ImageURL` (import `github.com/yunkeweb/go-word/element`). The callback must persist or upload the image data and return a browser-accessible URL; it can use `img.Data`, `img.Media.Data`, `img.GetName()`, and `img.GetAltText()`. Generate unique asset names, validate image formats, and propagate storage errors from the callback. The renderer does not create an assets directory for you.
+
+`HTMLImageURL` without a callback only copies an existing safe source/target URL. A DOCX media filename is not automatically a URL hosted by your application. Callback errors, unsafe URLs, and unavailable embedded images produce diagnostics in normal mode and fail strict mode. A URL passing the renderer's scheme check is not a guarantee that it exists or belongs to an approved host.
+
+## Diagnostics
+
+For an existing `doc`, import `errors` and `log` and inspect the result even when strict mode fails:
 
 ```go
-html, err := doc.RenderHTML(word.HTMLOptions{
-    ImageMode: word.HTMLImageURL,
-    ImageURL: func(img *element.Image) (string, error) {
-        return "/assets/" + img.GetName(), nil
-    },
-})
-```
-
-Callback URLs are validated before they are written into HTML. Keep the callback output under your application's asset policy.
-
-## Diagnostics and strict mode
-
-Some Word features do not have a lossless HTML equivalent. Use diagnostics to inspect those elements:
-
-```go
-result, err := doc.RenderHTMLWithDiagnostics(word.HTMLOptions{})
-if err != nil {
-    log.Fatal(err)
-}
+result, err := doc.RenderHTMLWithDiagnostics(word.HTMLOptions{Strict: true})
 for _, diagnostic := range result.Diagnostics {
-    log.Printf("%s: %s", diagnostic.ElementType, diagnostic.Message)
+	log.Printf("%s: %s", diagnostic.ElementType, diagnostic.Message)
+}
+var unsupported *word.HTMLUnsupportedError
+if errors.As(err, &unsupported) {
+	log.Printf("conversion has %d unsupported elements", len(unsupported.Diagnostics))
+} else if err != nil {
+	log.Fatal(err)
 }
 ```
 
-Set `Strict: true` when an unsupported or missing resource should fail the conversion instead of producing a diagnostic placeholder. The renderer preserves paragraphs, rich text, headings, links, lists, tables, merged cells, images, section boundaries, headers, footers, page breaks, bookmarks, notes, and comments. Complex charts and shapes remain diagnostic-driven.
+`HTMLDiagnostic` contains `ElementType` and `Message`. `RenderHTMLWithDiagnostics` retains diagnostic information and generated output on a strict-mode error. The byte-returning convenience APIs return an error without usable HTML in that case.
 
-## Resource limits
+Diagnostics cover elements that reach the renderer. They are **not a complete OOXML fidelity audit**: content the reader does not reconstruct cannot be reported by this stage. Use [package diagnostics](./diagnostics) separately for package/XML/relationship issues.
 
-When loading untrusted files, use `ReadOptions` with `RenderHTMLWithOptions` to bound archive size, part size, expansion, and entry count. This keeps DOCX ingestion predictable before HTML rendering begins.
+## Supported content and limits
+
+| Content | Output and boundary |
+| --- | --- |
+| Paragraphs, headings, text runs, links | Semantic tags and supported inline styles; full Word style inheritance is not reconstructed |
+| Lists | Nested lists, common decimal/letter/Roman formats, start values and continuation by numbering ID; custom composite labels and all Word restart rules are not fully reproduced |
+| Tables | Nested tables and DOM merge properties map to HTML, including `rowspan` / `colspan`; reading arbitrary DOCX merge properties remains limited |
+| Bookmarks | DOM bookmarks become anchors and internal links target them |
+| Sections and page breaks | Multiple sections use `section` and `data-break-type`; explicit page breaks use `goword-page-break`. Section break metadata does not implement Word pagination |
+| Headers and footers | Optional content with `data-type` (`default`, `first`, `even`); no page-dependent selection or repetition, and imported header/footer graphics remain limited |
+| Images | Available drawing images with size/alt metadata; missing embedded references are retained for diagnostics. External linked drawings and VML are not fully supported |
+| Notes, comments, shapes, formulas | DOM containers can expose text; imported references, geometry and equation layout are incomplete. Unsupported retained elements produce placeholders |
+
+Conversion aims at readable HTML, not pixel-identical Word pages. A successful strict conversion does not guarantee lossless conversion. Review representative documents before adopting it for a new document family.
+
+## Upgrading to v0.12.0
+
+```sh
+go get github.com/yunkeweb/go-word@v0.12.0
+```
+
+The module path and pure-Go runtime requirements are unchanged. HTML APIs are new since v0.11.0. If you used development snapshots, update HTML snapshots/CSS for section wrappers, list `type`/`start` attributes, merged-cell attributes and properly closed page-break elements. Missing embedded-image references can now cause strict mode to fail.
+
+`style.ListItem` adds `Start` (zero defaults to 1). Use keyed struct literals; positional literals from older versions need updating. `element.Container.AppendElement` appends an existing element and updates its parent; remove it from its old container first when moving it.
+
+See [benchmarks](./benchmarks) and the [changelog](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md).

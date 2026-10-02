@@ -15,11 +15,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Extract release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const tag = process.env.RELEASE_TAG;
+          const lines = fs.readFileSync('CHANGELOG.md', 'utf8').split(/\r?\n/);
+          const start = lines.findIndex(line => line === `## ${tag}` || line.startsWith(`## ${tag} `));
+          if (start < 0) throw new Error(`Missing CHANGELOG.md entry for ${tag}`);
+          let end = start + 1;
+          while (end < lines.length && !lines[end].startsWith('## ')) end++;
+          const body = lines.slice(start + 1, end).join('\n').trim();
+          if (!body) throw new Error(`Empty CHANGELOG.md entry for ${tag}`);
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'release-notes.md'), body + '\n');
+          NODE
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
+          body_path: ${{ runner.temp }}/release-notes.md
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

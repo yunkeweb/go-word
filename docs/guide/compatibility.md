@@ -112,4 +112,4 @@ html, err := doc.RenderHTML(word.HTMLOptions{
 })
 ```
 
-Use `word.RenderHTMLFile` or `word.RenderHTMLWithOptions` when the input is still a file or reader. Images default to embedded data URIs; set `ImageMode: word.HTMLImageURL` or provide `ImageURL` when assets should be served separately. Unsupported charts, complex shapes, and other lossy elements are reported through `RenderHTMLWithDiagnostics`; `Strict: true` turns those diagnostics into an error.
+Use `word.RenderHTMLFile` or `word.RenderHTMLWithOptions` when the input is still a file or reader. These functions return bytes for the caller to save. Images default to embedded data URIs; use `ImageURL` to persist assets and return their public URLs, or `HTMLImageURL` to reuse existing URLs. Neither mode automatically hosts media files. `RenderHTMLWithDiagnostics` reports unsupported elements retained in the DOM; `Strict: true` turns those diagnostics into an error. Content omitted during reading cannot be diagnosed by the renderer, so strict success does not imply lossless conversion. See the [DOCX to HTML guide](./docx-to-html) for complete programs, supported content, and read limits.

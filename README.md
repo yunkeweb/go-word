@@ -14,6 +14,7 @@ The public API keeps PHPWord names (`AddSection`, `AddText`, `IOFactory`, `Templ
 ## Features
 
 - **Zero External Dependencies** — 100% Go standard library (`encoding/xml`, `archive/zip`, `image`, `sync`). `go.mod` has no third-party `require`.
+- **DOCX to HTML** — render documents as fragments or standalone pages, stream output to `io.Writer`, and inspect conversion diagnostics. Configure ZIP read limits and image URLs without cgo or an external office suite.
 - **SDT form controls** — `AddSDTText`, `AddSDTDropdown`, `AddSDTDate`, and `AddSDTCheckbox` emit Word content controls (`w:sdt` → `w:sdtPr` → `w:sdtContent`), including Word 2010 `w14:checkbox`.
 - **Table Mechanics Plus** — repeating headers (`w:tblHeader` via `SetHeader` / `SetHeaderRow`), unbreakable rows (`w:cantSplit`), cell vertical align (`SetVAlign`), and text direction (`SetTextDirection`).
 - **Tiled / image watermarks** — `SetTextWatermark(text, WatermarkOptions{Tile, Angle, …})` writes a 3×3 VML grid; `SetImageWatermark` / `SetImageWatermarkFile` add a washout picture watermark.
@@ -31,10 +32,18 @@ Also included: tables with nested cells, headers/footers, images, lists, footnot
 ## Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.11.0
+go get github.com/yunkeweb/go-word@v0.12.0
 ```
 
 Requires **Go 1.21+**.
+
+## DOCX to HTML in v0.12.0
+
+`RenderHTMLFile` returns HTML bytes. Save them with `os.WriteFile`, or load a document and use `Document.WriteHTML` for direct writer output. The [DOCX to HTML guide](https://go-word.yunkeweb.com/guide/docx-to-html) includes complete programs, all seven entry points, image handling, diagnostics, and ZIP read limits.
+
+The renderer supports nested lists and numbering, DOM table merges, bookmarks, section boundaries, and optional headers/footers. Conversion targets readable HTML; Word pagination and arbitrary DOCX fidelity are not guaranteed. Strict mode checks retained DOM elements, not content omitted during reading.
+
+When upgrading, use keyed `style.ListItem` literals because the type adds `Start`. See the [upgrade notes](https://go-word.yunkeweb.com/guide/docx-to-html#upgrading-to-v0-12-0) and [changelog](CHANGELOG.md).
 
 ## Quick Start
 
@@ -63,7 +72,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.11.0", 1)
+	sec.AddTitle("GoWord v0.12.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",
@@ -130,7 +139,7 @@ if err := dst.AppendDocument(src, word.MergeOptions{
 
 Colliding paragraph style names and bookmark names are prefixed; image parts receive fresh relationship IDs when the package is written.
 
-## Current development APIs
+## Reader and template APIs
 
 - The reader restores section properties, common header/footer parts, notes, comments, tracked changes, and list numbering during DOCX round trips.
 - `TemplateProcessor.SetValue` recognizes macros split across adjacent Word text runs while retaining run properties.

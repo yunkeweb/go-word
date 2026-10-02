@@ -14,6 +14,7 @@
 ## 核心特性
 
 - **Zero External Dependencies（零第三方依赖）** — 100% Go 标准库（`encoding/xml`、`archive/zip`、`image`、`sync`）。`go.mod` 不含任何外部 `require`。
+- **DOCX 转 HTML** — 支持片段、完整页面和 `io.Writer` 流式输出，并提供转换诊断、ZIP 读取限制与图片 URL 回调；无需 cgo 或外部 Office 软件。
 - **SDT 结构化表单控件** — `AddSDTText`、`AddSDTDropdown`、`AddSDTDate`、`AddSDTCheckbox` 写出 Word 内容控件（`w:sdt` → `w:sdtPr` → `w:sdtContent`），复选框使用 Word 2010 `w14:checkbox`。
 - **表格高级版式** — 跨页重复页眉（`w:tblHeader`，`SetHeader` / `SetHeaderRow`）、行禁止跨页断裂（`w:cantSplit`）、单元格垂直对齐（`SetVAlign`）与文本方向（`SetTextDirection`）。
 - **平铺 / 图片水印** — `SetTextWatermark(text, WatermarkOptions{Tile, Angle, …})` 写出 3×3 VML 网格；`SetImageWatermark` / `SetImageWatermarkFile` 写入洗白图片水印。
@@ -31,10 +32,18 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.11.0
+go get github.com/yunkeweb/go-word@v0.12.0
 ```
 
 需要 **Go 1.21** 或更高版本。
+
+## v0.12.0：DOCX 转 HTML
+
+`RenderHTMLFile` 返回 HTML 字节，由调用方使用 `os.WriteFile` 保存；也可先加载文档，再用 `Document.WriteHTML` 直接写入目标。[DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html) 提供完整程序、全部七个入口、图片处理、诊断和 ZIP 读取限制说明。
+
+渲染器支持嵌套列表与编号、DOM 表格合并属性、书签、分节及可选的页眉页脚。转换目标是可读的 HTML，不保证 Word 分页或任意 DOCX 的完整保真；严格模式只检查保留的 DOM 元素，不覆盖读取阶段遗漏的内容。
+
+升级时请使用具名字段初始化 `style.ListItem`，该类型新增了 `Start`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-12-0)和[更新日志](CHANGELOG.md)。
 
 ## 快速开始
 
@@ -63,7 +72,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.11.0", 1)
+	sec.AddTitle("GoWord v0.12.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",
@@ -97,6 +106,7 @@ func main() {
 | [`examples/v0.9.0_watermark_security`](examples/v0.9.0_watermark_security) | 平铺文字水印、图片洗白、`AllowEdit` |
 | [`examples/v0.8.0_demo`](examples/v0.8.0_demo) | OMML、DrawingML 形状、分栏、`AppendDocument` |
 | [`examples/read_limits`](examples/read_limits) | 使用 `ReadOptions` 设置 ZIP 读取预算 |
+| [`examples/docx_to_html`](examples/docx_to_html) | 将 DOCX DOM 渲染为完整 HTML 页面 |
 | [`examples/simple`](examples/simple) | 样式、标题与第一份 `.docx` |
 
 包文档：[pkg.go.dev/github.com/yunkeweb/go-word](https://pkg.go.dev/github.com/yunkeweb/go-word)。站点：[go-word.yunkeweb.com](https://go-word.yunkeweb.com/zh/)。请查看 [DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html)，了解文件转换、图片资源、诊断和严格模式。
@@ -129,7 +139,7 @@ if err := dst.AppendDocument(src, word.MergeOptions{
 
 冲突的段落样式名与书签名会加上前缀；写出 ZIP 时图片部件获得新的关系 ID。
 
-## 当前开发 API
+## 读取与模板 API
 
 - 读取器在 DOCX 往返中恢复 section 属性、常用页眉页脚、脚注尾注、批注、修订和列表编号。
 - `TemplateProcessor.SetValue` 支持跨相邻 Word 文本 run 的宏替换，并保留 run 属性。
