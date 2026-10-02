@@ -73,7 +73,7 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	listStyles := map[int]style.ListItem{}
+	listStyles := map[int]map[int]style.ListItem{}
 	if numbering, e := zr.ReadFileWithLimit("word/numbering.xml", opts.partLimit()); e == nil {
 		listStyles = parseNumberingPart(numbering)
 	} else if !errors.Is(e, os.ErrNotExist) {
@@ -248,16 +248,11 @@ func parseNotePart(data []byte, kind string) parsedNotes {
 	return out
 }
 
-func parseNumberingPart(data []byte) map[int]style.ListItem {
-	type abstractDef struct {
-		format string
-		levels map[int]string
-	}
-	abs := map[int]abstractDef{}
+func parseNumberingPart(data []byte) map[int]map[int]style.ListItem {
+	abs := map[int]map[int]style.ListItem{}
 	nums := map[int]int{}
 	dec := xml.NewDecoder(bytes.NewReader(data))
-	var currentAbs, currentNum, currentLevel int
-	var currentFormat string
+	currentAbs, currentNum, currentLevel := -1, -1, -1
 	for {
 		tok, err := dec.Token()
 		if err != nil {
@@ -268,40 +263,53 @@ func parseNumberingPart(data []byte) map[int]style.ListItem {
 			switch localName(t.Name) {
 			case "abstractNum":
 				currentAbs = atoi(attr(t, "abstractNumId"))
-				abs[currentAbs] = abstractDef{levels: map[int]string{}}
+				abs[currentAbs] = make(map[int]style.ListItem)
 			case "lvl":
-				currentLevel = atoi(attr(t, "ilvl"))
-				currentFormat = ""
+				if currentAbs >= 0 {
+					currentLevel = atoi(attr(t, "ilvl"))
+				}
+			case "start":
+				if currentAbs >= 0 && currentLevel >= 0 {
+					level := abs[currentAbs][currentLevel]
+					level.Start = atoi(attr(t, "val"))
+					abs[currentAbs][currentLevel] = level
+				}
 			case "numFmt":
-				currentFormat = attr(t, "val")
+				if currentAbs >= 0 && currentLevel >= 0 {
+					level := abs[currentAbs][currentLevel]
+					level.Format = attr(t, "val")
+					abs[currentAbs][currentLevel] = level
+				}
 			case "num":
 				currentNum = atoi(attr(t, "numId"))
 			case "abstractNumId":
-				nums[currentNum] = atoi(attr(t, "val"))
+				if currentNum >= 0 {
+					nums[currentNum] = atoi(attr(t, "val"))
+				}
 			}
 		case xml.EndElement:
 			switch localName(t.Name) {
-			case "numFmt":
-				if def, ok := abs[currentAbs]; ok && currentAbs > 0 {
-					def.levels[currentLevel] = currentFormat
-					abs[currentAbs] = def
-				}
+			case "lvl":
+				currentLevel = -1
 			case "abstractNum":
-				currentAbs = 0
+				currentAbs = -1
 			case "num":
-				currentNum = 0
+				currentNum = -1
 			}
 		}
 	}
-	out := map[int]style.ListItem{}
+	out := map[int]map[int]style.ListItem{}
 	for id, abstractID := range nums {
-		def := abs[abstractID]
-		format := def.levels[0]
-		listType := style.ListTypeNumber
-		if format == "bullet" {
-			listType = style.ListTypeBullet
+		out[id] = make(map[int]style.ListItem)
+		for depth, level := range abs[abstractID] {
+			level.NumId = id
+			level.Depth = depth
+			level.ListType = style.ListTypeNumber
+			if level.Format == style.NumberBullet {
+				level.ListType = style.ListTypeBullet
+			}
+			out[id][depth] = level
 		}
-		out[id] = style.ListItem{NumId: id, ListType: listType, Format: format}
 	}
 	return out
 }
@@ -525,11 +533,11 @@ type tblFrame struct {
 	para *element.TextRun
 }
 
-func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]style.ListItem) error {
+func parseDocumentXMLRels(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem) error {
 	return parseDocumentXMLRelsImages(data, sec, rels, listStyles, nil)
 }
 
-func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]style.ListItem, images map[string]documentImage) error {
+func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem, images map[string]documentImage) error {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
 		frames        []tblFrame
@@ -610,6 +618,12 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 	}
 	flushPara := func() {
 		flushRun()
+		listStyle := style.ListItem{NumId: pNumID, Depth: pLevel, ListType: style.ListTypeNumber, Format: style.NumberDecimal}
+		if levels := listStyles[pNumID]; levels != nil {
+			if level, ok := levels[pLevel]; ok {
+				listStyle = level
+			}
+		}
 		if c := currentCell(); c != nil {
 			f := &frames[len(frames)-1]
 			if f.para != nil {
@@ -617,8 +631,13 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 				els := f.para.Elements()
 				if len(els) == 0 {
 					c.RemoveElement(f.para)
-				}
-				if len(els) == 1 {
+				} else if pNumID > 0 {
+					c.RemoveElement(f.para)
+					item := c.AddListItemRun(pLevel, listStyle, pStyle)
+					for _, el := range els {
+						item.AppendElement(el)
+					}
+				} else if len(els) == 1 {
 					if tx, ok := els[0].(*element.Text); ok {
 						c.RemoveElement(f.para)
 						out := c.AddText(tx.Content, tx.FontStyle, pStyle)
@@ -628,6 +647,7 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 				f.para = nil
 			}
 			pStyle = ""
+			pNumID, pLevel = 0, 0
 			bold, italic, color = false, false, ""
 			return
 		}
@@ -652,6 +672,12 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 			switch {
 			case len(els) == 0:
 				sec.RemoveElement(bodyRun)
+			case pNumID > 0 && (len(els) != 1 || !isTextElement(els[0])):
+				sec.RemoveElement(bodyRun)
+				item := sec.AddListItemRun(pLevel, listStyle, pStyle)
+				for _, el := range els {
+					item.AppendElement(el)
+				}
 			case len(els) == 1:
 				if tx, ok := els[0].(*element.Text); ok {
 					sec.RemoveElement(bodyRun)
@@ -660,12 +686,7 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 						para = pStyle
 					}
 					if pNumID > 0 {
-						list, ok := listStyles[pNumID]
-						if !ok {
-							list = style.ListItem{NumId: pNumID, ListType: style.ListTypeNumber, Format: style.NumberDecimal}
-						}
-						list.NumId, list.Depth = pNumID, pLevel
-						item := sec.AddListItem(tx.Content, pLevel, tx.FontStyle, list, para)
+						item := sec.AddListItem(tx.Content, pLevel, tx.FontStyle, para, listStyle)
 						item.SetTrackChange(tx.GetTrackChange())
 					} else {
 						out := sec.AddText(tx.Content, tx.FontStyle, para)
@@ -875,6 +896,11 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 		}
 	}
 	return nil
+}
+
+func isTextElement(el element.Element) bool {
+	_, ok := el.(*element.Text)
+	return ok
 }
 
 func parseDrawing(dec *xml.Decoder) (rid string, width, height int64, alt string) {

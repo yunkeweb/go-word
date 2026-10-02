@@ -53,6 +53,13 @@ func (c *Container) add(el Element) {
 	c.elements = append(c.elements, el)
 }
 
+// AppendElement appends an existing element and updates its parent.
+func (c *Container) AppendElement(el Element) {
+	if el != nil {
+		c.add(el)
+	}
+}
+
 func pick2(styles []any) (any, any) {
 	var a, b any
 	if len(styles) > 0 {

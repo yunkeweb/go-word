@@ -150,6 +150,8 @@ type htmlRenderer struct {
 	out         io.Writer
 	err         error
 	diagnostics []HTMLDiagnostic
+	document    *Document
+	listCounts  map[htmlListKey]int
 }
 
 func newHTMLRenderer(out io.Writer, opts HTMLOptions) *htmlRenderer {
@@ -159,6 +161,8 @@ func newHTMLRenderer(out io.Writer, opts HTMLOptions) *htmlRenderer {
 type htmlAttr struct{ name, value string }
 
 func (r *htmlRenderer) renderDocument(d *Document) {
+	r.document = d
+	r.listCounts = make(map[htmlListKey]int)
 	if r.opts.Standalone {
 		r.writeString("<!doctype html><html><head><meta charset=\"utf-8\">")
 		title := r.opts.Title
@@ -454,20 +458,40 @@ type htmlMergeState struct {
 }
 
 func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) int {
-	kind := listKind(elements[start])
+	list := r.listStyle(elements[start])
 	tag := "ul"
-	if kind == style.ListTypeNumber || kind == style.ListTypeNumberNE || kind == style.ListTypeMultilevel {
+	if list.ListType == style.ListTypeNumber || list.ListType == style.ListTypeNumberNE || list.ListType == style.ListTypeMultilevel {
 		tag = "ol"
 	}
-	r.open(tag)
+	var attrs []htmlAttr
+	switch list.Format {
+	case style.NumberUpperRoman:
+		attrs = append(attrs, htmlAttr{"type", "I"})
+	case style.NumberLowerRoman:
+		attrs = append(attrs, htmlAttr{"type", "i"})
+	case style.NumberUpperLetter:
+		attrs = append(attrs, htmlAttr{"type", "A"})
+	case style.NumberLowerLetter:
+		attrs = append(attrs, htmlAttr{"type", "a"})
+	case style.NumberDecimalZero:
+		attrs = append(attrs, htmlAttr{"style", "list-style-type:decimal-leading-zero"})
+	}
+	if list.ListType == style.ListTypeNone || list.Format == style.NumberNone {
+		attrs = []htmlAttr{{"style", "list-style-type:none"}}
+	}
+	key := htmlListKey{list.NumId, depth}
+	number := maxInt(list.Start, 1)
+	if list.NumId > 0 && r.listCounts[key] > 0 {
+		number = r.listCounts[key]
+	}
+	if tag == "ol" && number != 1 {
+		attrs = append(attrs, htmlAttr{"start", strconv.Itoa(number)})
+	}
+	r.open(tag, attrs...)
 	i := start
 	for i < len(elements) {
-		if !isListElement(elements[i]) || listDepth(elements[i]) < depth || listKind(elements[i]) != kind {
+		if !isListElement(elements[i]) || listDepth(elements[i]) != depth || r.listStyle(elements[i]) != list {
 			break
-		}
-		if listDepth(elements[i]) > depth {
-			i = r.renderList(elements, i, listDepth(elements[i]))
-			continue
 		}
 		r.open("li")
 		switch v := elements[i].(type) {
@@ -476,8 +500,17 @@ func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) 
 		case *element.ListItemRun:
 			r.renderInlineElements(v.Elements())
 		}
+		if list.NumId > 0 {
+			r.listCounts[key] = number + 1
+			for child := range r.listCounts {
+				if child.numID == list.NumId && child.depth > depth {
+					delete(r.listCounts, child)
+				}
+			}
+		}
+		number++
 		i++
-		if i < len(elements) && isListElement(elements[i]) && listDepth(elements[i]) > depth {
+		for i < len(elements) && isListElement(elements[i]) && listDepth(elements[i]) > depth {
 			i = r.renderList(elements, i, listDepth(elements[i]))
 		}
 		r.close("li")
@@ -504,24 +537,49 @@ func listDepth(el element.Element) int {
 		return 0
 	}
 }
-func listKind(el element.Element) string {
+
+type htmlListKey struct{ numID, depth int }
+
+func (r *htmlRenderer) listStyle(el element.Element) style.ListItem {
+	var value any
 	switch v := el.(type) {
 	case *element.ListItem:
-		if s, ok := v.ListStyle.(style.ListItem); ok {
-			return s.ListType
-		}
-		if s, ok := v.ListStyle.(*style.ListItem); ok && s != nil {
-			return s.ListType
-		}
+		value = v.ListStyle
 	case *element.ListItemRun:
-		if s, ok := v.ListStyle.(style.ListItem); ok {
-			return s.ListType
+		value = v.ListStyle
+	}
+	list := style.ListItem{ListType: style.ListTypeBullet}
+	switch v := value.(type) {
+	case style.ListItem:
+		list = v
+	case *style.ListItem:
+		if v != nil {
+			list = *v
 		}
-		if s, ok := v.ListStyle.(*style.ListItem); ok && s != nil {
-			return s.ListType
+	case string:
+		list.ListType = v
+		if r.document != nil {
+			id := 2
+			for _, ns := range r.document.styles {
+				if ns.Kind != "numbering" || ns.Numbering == nil {
+					continue
+				}
+				id++
+				if ns.Name == v && listDepth(el) < len(ns.Numbering.Levels) {
+					level := ns.Numbering.Levels[listDepth(el)]
+					list = style.ListItem{NumId: id, Format: level.Format, Start: level.Start}
+					break
+				}
+			}
 		}
 	}
-	return style.ListTypeBullet
+	if list.Format == style.NumberBullet {
+		list.ListType = style.ListTypeBullet
+	} else if list.Format != "" && list.Format != style.NumberNone {
+		list.ListType = style.ListTypeNumber
+	}
+	list.Depth = 0 // The element owns nesting; compare only numbering identity/style.
+	return list
 }
 func maxInt(a, b int) int {
 	if a > b {

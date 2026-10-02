@@ -26,6 +26,7 @@ type ListItem struct {
 	NumId    int
 	Depth    int
 	Format   string
+	Start    int // First ordinal; zero uses 1.
 }
 
 // List type names used by PHPWord.

@@ -224,6 +224,25 @@ func TestRenderHTMLTableMerges(t *testing.T) {
 	assertHTMLStructure(t, s)
 }
 
+func TestRenderHTMLListNumberingFormats(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddListItem("chapter", 0, nil, nil, style.ListItem{ListType: style.ListTypeNumber, Format: style.NumberUpperRoman})
+	sec.AddListItem("section", 1, nil, nil, style.ListItem{ListType: style.ListTypeNumber, Format: style.NumberLowerLetter})
+
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{`<ol type="I">`, `<ol type="a">`, "chapter", "section"} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+	assertHTMLStructure(t, s)
+}
+
 func TestRenderHTMLConcurrentIsolation(t *testing.T) {
 	doc := New()
 	doc.AddSection().AddText("concurrent")
