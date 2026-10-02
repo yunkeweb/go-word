@@ -862,6 +862,20 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 					out := currentRun().AddImageBytes(img.Name, img.Data, st)
 					out.Media.Target = img.Target
 					out.Media.Ext = strings.TrimPrefix(strings.ToLower(path.Ext(img.Name)), ".")
+				} else if rid != "" {
+					// Keep the drawing in the DOM so HTML conversion can report the
+					// missing relationship or media part instead of dropping it.
+					st := style.Image{AltText: alt}
+					if width > 0 {
+						st.Width = common.EMUToPixel(width)
+						st.WidthEMU = width
+					}
+					if height > 0 {
+						st.Height = common.EMUToPixel(height)
+						st.HeightEMU = height
+					}
+					out := currentRun().AddImageBytes("missing-"+rid, nil, st)
+					out.Media.Target = rid
 				}
 			case "sectPr":
 				if err := skip(dec, t); err != nil {

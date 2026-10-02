@@ -9,6 +9,29 @@ import (
 	"github.com/yunkeweb/go-word/style"
 )
 
+func TestHTMLMissingImageResourceDiagnostics(t *testing.T) {
+	sec := element.NewSection(1, nil)
+	data := []byte(`<w:body xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:p><w:r><w:drawing><wp:inline><wp:extent cx="12700" cy="6350"/><wp:docPr descr="missing logo"/><a:graphic><a:graphicData><a:blip r:embed="rIdMissing"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body>`)
+	if err := parseDocumentXMLRelsImages(data, sec, nil, nil, map[string]documentImage{}); err != nil {
+		t.Fatal(err)
+	}
+	doc := New()
+	doc.sections = []*element.Section{sec}
+	result, err := doc.RenderHTMLWithDiagnostics(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Diagnostics) != 1 || result.Diagnostics[0].ElementType != "Image" {
+		t.Fatalf("diagnostics=%+v", result.Diagnostics)
+	}
+	if !strings.Contains(string(result.HTML), "Unsupported: Image") {
+		t.Fatalf("missing image fallback: %s", result.HTML)
+	}
+	if _, err := doc.RenderHTML(HTMLOptions{Strict: true}); err == nil {
+		t.Fatal("strict mode accepted missing image")
+	}
+}
+
 func TestHTMLNumberingDOCX(t *testing.T) {
 	doc := New()
 	doc.AddNumberingStyle("outline", style.Numbering{Type: "multilevel", Levels: []style.NumberingLevel{

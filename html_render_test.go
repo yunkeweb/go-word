@@ -3,6 +3,7 @@ package word
 import (
 	"bytes"
 	"errors"
+	"html"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,24 @@ import (
 	"github.com/yunkeweb/go-word/element"
 	"github.com/yunkeweb/go-word/style"
 )
+
+func FuzzRenderHTMLTextEscaping(f *testing.F) {
+	for _, seed := range []string{"", "plain", "<script>alert(1)</script>", "quotes & ampersands", "中文"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, input string) {
+		doc := New()
+		doc.AddSection().AddText(input)
+		got, err := doc.RenderHTML(HTMLOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(got), html.EscapeString(input)) {
+			t.Fatalf("escaped text missing from HTML: %q", got)
+		}
+		assertHTMLStructure(t, string(got))
+	})
+}
 
 func TestRenderHTMLBasicDocument(t *testing.T) {
 	doc := New()
