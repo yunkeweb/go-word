@@ -183,7 +183,16 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 		}
 		r.writeString("</head>")
 		if r.opts.IncludeCSS {
-			r.open("body", htmlAttr{"class", "goword-document"})
+			attrs := []htmlAttr{{"class", "goword-document"}}
+			if repeatHeader, repeatFooter := repeatableDefaultHeaderFooter(d.sections); repeatHeader {
+				attrs = append(attrs, htmlAttr{"data-repeat-header", "true"})
+				if repeatFooter {
+					attrs = append(attrs, htmlAttr{"data-repeat-footer", "true"})
+				}
+			} else if repeatFooter {
+				attrs = append(attrs, htmlAttr{"data-repeat-footer", "true"})
+			}
+			r.open("body", attrs...)
 		} else {
 			r.open("body")
 		}
@@ -206,7 +215,11 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 		}
 		if r.opts.IncludeHeadersFooters {
 			for _, h := range sec.Headers {
-				r.open("header", htmlAttr{"data-type", h.HeaderType})
+				attrs := []htmlAttr{{"data-type", h.HeaderType}}
+				if pageLayout {
+					attrs = append(attrs, htmlAttr{"class", "goword-header"}, htmlAttr{"data-section", strconv.Itoa(i + 1)})
+				}
+				r.open("header", attrs...)
 				r.renderElements(h.Elements())
 				r.close("header")
 			}
@@ -214,7 +227,11 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 		r.renderElements(sec.Elements())
 		if r.opts.IncludeHeadersFooters {
 			for _, f := range sec.Footers {
-				r.open("footer", htmlAttr{"data-type", f.HeaderType})
+				attrs := []htmlAttr{{"data-type", f.HeaderType}}
+				if pageLayout {
+					attrs = append(attrs, htmlAttr{"class", "goword-footer"}, htmlAttr{"data-section", strconv.Itoa(i + 1)})
+				}
+				r.open("footer", attrs...)
 				r.renderElements(f.Elements())
 				r.close("footer")
 			}
@@ -226,6 +243,26 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 	if r.opts.Standalone {
 		r.writeString("</body></html>")
 	}
+}
+
+func repeatableDefaultHeaderFooter(sections []*element.Section) (bool, bool) {
+	if len(sections) != 1 || sections[0] == nil {
+		return false, false
+	}
+	var headers, footers int
+	for _, h := range sections[0].Headers {
+		if h == nil || h.HeaderType != element.HeaderAuto {
+			return false, false
+		}
+		headers++
+	}
+	for _, f := range sections[0].Footers {
+		if f == nil || f.HeaderType != element.HeaderAuto {
+			return false, false
+		}
+		footers++
+	}
+	return headers == 1, footers == 1
 }
 
 func (r *htmlRenderer) renderElements(elements []element.Element) {
@@ -416,9 +453,25 @@ func (r *htmlRenderer) renderTable(t *element.Table) {
 		attrs = append(attrs, htmlAttr{"style", st})
 	}
 	r.open("table", attrs...)
-	r.open("tbody")
-	for _, row := range t.Rows {
-		r.open("tr")
+	headerRows := 0
+	for headerRows < len(t.Rows) && t.Rows[headerRows] != nil && t.Rows[headerRows].IsHeader() {
+		headerRows++
+	}
+	bodyTag := "tbody"
+	if headerRows > 0 {
+		bodyTag = "thead"
+	}
+	r.open(bodyTag)
+	for i, row := range t.Rows {
+		if headerRows > 0 && i == headerRows {
+			r.close("thead")
+			r.open("tbody")
+		}
+		rowAttrs := []htmlAttr{}
+		if st := tableRowStyle(row.Style); st != "" {
+			rowAttrs = append(rowAttrs, htmlAttr{"style", st})
+		}
+		r.open("tr", rowAttrs...)
 		for _, cell := range row.Cells {
 			if skip[cell] {
 				continue
@@ -439,7 +492,7 @@ func (r *htmlRenderer) renderTable(t *element.Table) {
 		}
 		r.close("tr")
 	}
-	r.close("tbody")
+	r.close(bodyTag)
 	r.close("table")
 }
 
@@ -648,13 +701,96 @@ func (r *htmlRenderer) renderImage(img *element.Image) {
 		alt = img.GetName()
 	}
 	attrs = append(attrs, htmlAttr{"alt", alt})
-	if img.Style.Width > 0 {
-		attrs = append(attrs, htmlAttr{"width", formatFloat(img.Style.Width)})
+	width, height := img.Style.Width, img.Style.Height
+	if width <= 0 && img.Style.WidthEMU > 0 {
+		width = common.EMUToPixel(img.Style.WidthEMU)
 	}
-	if img.Style.Height > 0 {
-		attrs = append(attrs, htmlAttr{"height", formatFloat(img.Style.Height)})
+	if height <= 0 && img.Style.HeightEMU > 0 {
+		height = common.EMUToPixel(img.Style.HeightEMU)
+	}
+	if width > 0 {
+		attrs = append(attrs, htmlAttr{"width", formatFloat(width)})
+	}
+	if height > 0 {
+		attrs = append(attrs, htmlAttr{"height", formatFloat(height)})
+	}
+	if css, supported := imageStyle(img.Style); css != "" {
+		attrs = append(attrs, htmlAttr{"style", css})
+		if !supported {
+			r.diagnostics = append(r.diagnostics, HTMLDiagnostic{ElementType: "Image", Message: "unsupported image wrapping style"})
+		}
+	} else if img.Style.WrappingStyle != "" && !supportedImageWrapping(img.Style.WrappingStyle) {
+		r.diagnostics = append(r.diagnostics, HTMLDiagnostic{ElementType: "Image", Message: "unsupported image wrapping style"})
 	}
 	r.void("img", attrs...)
+}
+
+func supportedImageWrapping(wrapping string) bool {
+	switch strings.ToLower(strings.TrimSpace(wrapping)) {
+	case "", style.WrappingInline, style.WrappingSquare, style.WrappingTight, style.WrappingBehind, style.WrappingInFront:
+		return true
+	default:
+		return false
+	}
+}
+
+func imageStyle(st style.Image) (string, bool) {
+	wrapping := strings.ToLower(strings.TrimSpace(st.WrappingStyle))
+	supported := supportedImageWrapping(wrapping)
+	var out []string
+	switch wrapping {
+	case style.WrappingSquare, style.WrappingTight:
+		switch strings.ToLower(strings.TrimSpace(st.Alignment)) {
+		case "right":
+			out = append(out, "float:right")
+		case "center":
+			out = append(out, "display:block", "margin-left:auto", "margin-right:auto")
+		default:
+			out = append(out, "float:left")
+		}
+	case style.WrappingBehind:
+		out = append(out, "position:relative", "z-index:-1")
+	case style.WrappingInFront:
+		out = append(out, "position:relative", "z-index:1")
+	default:
+		if strings.EqualFold(strings.TrimSpace(st.Alignment), "center") {
+			out = append(out, "display:block", "margin-left:auto", "margin-right:auto")
+		}
+	}
+	if st.MarginTop != 0 {
+		out = append(out, "margin-top:"+formatFloat(st.MarginTop)+"px")
+	}
+	if st.MarginRight != 0 {
+		out = append(out, "margin-right:"+formatFloat(st.MarginRight)+"px")
+	}
+	if st.MarginBottom != 0 {
+		out = append(out, "margin-bottom:"+formatFloat(st.MarginBottom)+"px")
+	}
+	if st.MarginLeft != 0 {
+		out = append(out, "margin-left:"+formatFloat(st.MarginLeft)+"px")
+	}
+	if st.OffsetX != 0 || st.OffsetY != 0 {
+		if !hasCSSProperty(out, "position") {
+			out = append(out, "position:relative")
+		}
+		if st.OffsetX != 0 {
+			out = append(out, "left:"+formatFloat(st.OffsetX)+"px")
+		}
+		if st.OffsetY != 0 {
+			out = append(out, "top:"+formatFloat(st.OffsetY)+"px")
+		}
+	}
+	return strings.Join(out, ";"), supported
+}
+
+func hasCSSProperty(properties []string, name string) bool {
+	prefix := name + ":"
+	for _, property := range properties {
+		if strings.HasPrefix(property, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *htmlRenderer) imageSource(img *element.Image) (string, error) {
@@ -749,8 +885,15 @@ func fontStyle(v any) string {
 		return ""
 	}
 	var p []string
-	if f.Name != "" {
-		p = append(p, "font-family:\""+cssString(f.Name)+"\"")
+	if f.Name != "" || f.FallbackFont != "" {
+		families := make([]string, 0, 2)
+		if f.Name != "" {
+			families = append(families, "\""+cssString(f.Name)+"\"")
+		}
+		if f.FallbackFont != "" {
+			families = append(families, "\""+cssString(f.FallbackFont)+"\"")
+		}
+		p = append(p, "font-family:"+strings.Join(families, ","))
 	}
 	if f.Size > 0 {
 		p = append(p, "font-size:"+formatFloat(f.Size)+"pt")
@@ -784,6 +927,23 @@ func fontStyle(v any) string {
 	}
 	if f.SubScript {
 		p = append(p, "vertical-align:sub;font-size:smaller")
+	}
+	if f.Spacing != 0 {
+		p = append(p, "letter-spacing:"+twipsPx(f.Spacing))
+	}
+	if f.Scale > 0 {
+		p = append(p, "font-stretch:"+strconv.Itoa(f.Scale)+"%")
+	}
+	if f.Position != 0 {
+		p = append(p, "vertical-align:"+formatFloat(float64(f.Position)/2)+"pt")
+	}
+	switch strings.ToLower(strings.TrimSpace(f.WhiteSpace)) {
+	case "preserve", "pre", "pre-wrap":
+		p = append(p, "white-space:pre-wrap")
+	case "pre-line":
+		p = append(p, "white-space:pre-line")
+	case "nowrap":
+		p = append(p, "white-space:nowrap")
 	}
 	if f.SmallCaps {
 		p = append(p, "font-variant:small-caps")
@@ -874,14 +1034,41 @@ func paragraphStyle(v any) string {
 		}
 		out = append(out, "line-height:"+line)
 	}
+	if len(p.Tabs) > 0 && p.Tabs[0].Pos > 0 {
+		out = append(out, "tab-size:"+twipsPx(p.Tabs[0].Pos))
+	}
+	if p.SuppressAutoHyphens {
+		out = append(out, "hyphens:none")
+	}
 	if p.PageBreakBefore {
 		out = append(out, "break-before:page")
+	}
+	if p.KeepNext {
+		out = append(out, "break-after:avoid")
+	}
+	if p.KeepLines {
+		out = append(out, "break-inside:avoid")
+	}
+	if p.WidowControl != nil {
+		if *p.WidowControl {
+			out = append(out, "widows:2;orphans:2")
+		} else {
+			out = append(out, "widows:1;orphans:1")
+		}
 	}
 	if p.Bidi {
 		out = append(out, "direction:rtl")
 	}
 	if p.Shading.Fill != "" {
 		out = append(out, "background-color:"+cssColor(p.Shading.Fill))
+	}
+	for _, b := range []struct {
+		name string
+		b    style.Border
+	}{{"top", p.Borders.Top}, {"right", p.Borders.Right}, {"bottom", p.Borders.Bottom}, {"left", p.Borders.Left}} {
+		if b.b.Style != "" && !strings.EqualFold(b.b.Style, "nil") {
+			out = append(out, "border-"+b.name+":"+borderCSS(b.b))
+		}
 	}
 	return strings.Join(out, ";")
 }
@@ -890,11 +1077,42 @@ func tableStyle(t style.Table) string {
 	if t.Width > 0 {
 		out = append(out, "width:"+twipsPx(t.Width))
 	}
+	if strings.EqualFold(t.Layout, "fixed") {
+		out = append(out, "table-layout:fixed")
+	}
+	if t.CellSpacing > 0 || t.CellSpacingVal > 0 {
+		spacing := t.CellSpacing
+		if spacing <= 0 {
+			spacing = t.CellSpacingVal
+		}
+		out[0] = "border-collapse:separate"
+		out = append(out, "border-spacing:"+twipsPx(spacing))
+	}
+	for _, b := range []struct {
+		name string
+		b    style.Border
+	}{{"top", t.Borders.Top}, {"right", t.Borders.Right}, {"bottom", t.Borders.Bottom}, {"left", t.Borders.Left}} {
+		if b.b.Style != "" && !strings.EqualFold(b.b.Style, "nil") {
+			out = append(out, "border-"+b.name+":"+borderCSS(b.b))
+		}
+	}
 	if t.Shading.Fill != "" {
 		out = append(out, "background-color:"+cssColor(t.Shading.Fill))
 	}
 	return strings.Join(out, ";")
 }
+
+func tableRowStyle(row style.Row) string {
+	var out []string
+	if row.CantSplit {
+		out = append(out, "break-inside:avoid")
+	}
+	if row.Height > 0 {
+		out = append(out, "height:"+twipsPx(row.Height))
+	}
+	return strings.Join(out, ";")
+}
+
 func cellStyle(c style.Cell) string {
 	var out []string
 	if c.Width > 0 {
@@ -905,6 +1123,18 @@ func cellStyle(c style.Cell) string {
 	}
 	if c.NoWrap {
 		out = append(out, "white-space:nowrap")
+	}
+	if c.PaddingTop != 0 {
+		out = append(out, "padding-top:"+twipsPx(c.PaddingTop))
+	}
+	if c.PaddingRight != 0 {
+		out = append(out, "padding-right:"+twipsPx(c.PaddingRight))
+	}
+	if c.PaddingBottom != 0 {
+		out = append(out, "padding-bottom:"+twipsPx(c.PaddingBottom))
+	}
+	if c.PaddingLeft != 0 {
+		out = append(out, "padding-left:"+twipsPx(c.PaddingLeft))
 	}
 	if c.BgColor != "" {
 		out = append(out, "background-color:"+cssColor(c.BgColor))

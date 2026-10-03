@@ -13,6 +13,7 @@ import (
 const pageHTMLCSS = `
 body.goword-document{margin:0;padding:24px 0;background:#e7e7e7;color:#000}
 .goword-page{box-sizing:border-box;display:flow-root;margin:0 auto 24px;background:#fff;box-shadow:0 0 1px #999;overflow:visible}
+.goword-header,.goword-footer{break-inside:avoid}
 @media print{
 body.goword-document{padding:0;background:#fff}
 .goword-page{display:block;width:auto!important;min-height:0!important;padding:0!important;margin:0!important;box-shadow:none}
@@ -20,6 +21,8 @@ body.goword-document{padding:0;background:#fff}
 .goword-page[data-break-type="continuous"]{break-before:auto}
 .goword-page[data-break-type="evenPage"]{break-before:left}
 .goword-page[data-break-type="oddPage"]{break-before:right}
+body.goword-document[data-repeat-header="true"] .goword-header[data-type="default"]{position:fixed;top:0;left:0;right:0;z-index:1}
+body.goword-document[data-repeat-footer="true"] .goword-footer[data-type="default"]{position:fixed;right:0;bottom:0;left:0;z-index:1}
 }
 `
 

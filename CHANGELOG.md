@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased / 开发中
+## v0.13.0 — 2026-10-03
+
+### DOCX to HTML fidelity / DOCX 转 HTML 保真度
+
+- Preserve paragraph pagination hints, section-aware header/footer containers, safe print repetition for a simple default header/footer pair, repeating table headers, fixed table layout, table borders/spacing/cell padding, row heights, EMU image dimensions and common wrapping metadata.
+- Resolve common theme font/color references, add font fallback and additional font/paragraph metrics, and report unknown image wrapping through `HTMLDiagnostic` instead of silently dropping the image.
+- 保留段落分页提示、分节页眉页脚容器、简单默认页眉页脚的安全打印重复、重复表头、固定表格布局、表格边框/间距/单元格内边距、行高、EMU 图片尺寸及常见环绕元数据。
+- 解析常见主题字体/颜色引用，增加字体回退及更多字体/段落度量；未知图片环绕通过 `HTMLDiagnostic` 报告，不再静默丢弃图片。
 
 ## v0.12.2 — 2026-10-03
 

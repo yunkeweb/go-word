@@ -32,20 +32,24 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.2
+go get github.com/yunkeweb/go-word@v0.13.0
 ```
 
 需要 **Go 1.21** 或更高版本。
 
-## v0.12.2：DOCX 转 HTML
+## v0.13.0：DOCX 转 HTML
 
 `RenderHTMLFile` 返回 HTML 字节，由调用方使用 `os.WriteFile` 保存；也可先加载文档，再用 `Document.WriteHTML` 直接写入目标。[DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html) 提供完整程序、全部七个入口、图片处理、诊断和 ZIP 读取限制说明。
 
 渲染器支持嵌套列表与编号、DOM 表格合并属性、书签、分节及可选的页眉页脚。转换目标是可读的 HTML，不保证 Word 分页或任意 DOCX 的完整保真；严格模式只检查保留的 DOM 元素，不覆盖读取阶段遗漏的内容。
 
-升级时请使用具名字段初始化 `style.ListItem` 和 `style.Spacing`，两者分别新增了 `Start` 和 `BeforeSet`/`AfterSet`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-12-2)和[更新日志](CHANGELOG.md)。
+升级时请使用具名字段初始化 `style.ListItem` 和 `style.Spacing`，两者分别新增了 `Start` 和 `BeforeSet`/`AfterSet`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-13-0)和[更新日志](CHANGELOG.md)。
 
-**v0.12.2 修复：** 启用 `Standalone: true` 和 `IncludeCSS: true` 后，HTML 按各节纸张尺寸、方向与页边距保留屏幕及打印版心宽度；超链接明确指定的颜色与下划线设置覆盖浏览器默认样式。屏幕预览向下延伸，不复现 Word 自动分页；同时包含 v0.12.1 的 DOCX 样式继承修复。
+**v0.13.0 修复：** 启用 `Standalone: true` 和 `IncludeCSS: true` 后，HTML 按各节纸张尺寸、方向与页边距保留屏幕及打印版心宽度；超链接明确指定的颜色与下划线设置覆盖浏览器默认样式。屏幕预览向下延伸，不复现 Word 自动分页；同时包含 v0.12.1 的 DOCX 样式继承修复。
+
+### v0.13.0 的 DOCX 转 HTML 保真度提升
+
+v0.13.0 保持现有 HTML API 兼容，并增加段落分页提示、分节页眉页脚容器、简单默认页眉页脚的安全打印重复、重复表头、固定表格布局、边框、间距和单元格内边距、EMU 图片尺寸与环绕元数据、主题字体/颜色解析、字体回退及更多段落度量。未知图片环绕仍会保留图片，并通过 `HTMLDiagnostic`（严格模式下返回错误）报告。屏幕输出仍是流式分节，不是 Word 分页引擎。浏览器与打印边界请参阅 [DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html)。
 
 ## 快速开始
 
@@ -74,7 +78,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.12.2", 1)
+	sec.AddTitle("GoWord v0.13.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

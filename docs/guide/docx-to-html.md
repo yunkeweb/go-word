@@ -1,6 +1,6 @@
 # DOCX to HTML
 
-Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1** and paper layout and hyperlink appearance fixes in **v0.12.2**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
+Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, and fidelity improvements in **v0.13.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
 ## Convert a file
 
@@ -30,7 +30,7 @@ func main() {
 }
 ```
 
-**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.12.2/examples/docx_to_html).
+**`RenderHTMLFile` returns HTML bytes; it does not accept an output filename or write a file.** The caller saves the result. A self-contained sample that also creates the input DOCX is available in [examples/docx_to_html](https://github.com/yunkeweb/go-word/tree/v0.13.0/examples/docx_to_html).
 
 ## Paper preview and flowing content
 
@@ -41,6 +41,18 @@ The screen preview grows vertically for a long section; it does **not** reproduc
 For content that should flow within your application's own container, use `HTMLOptions{}` to return a fragment. For a standalone page without the paper preview, use `HTMLOptions{Standalone: true, IncludeCSS: false}` and provide your own CSS. Text and paragraph inline formatting remains available in both cases.
 
 Explicit DOCX hyperlink colors and underline settings apply directly to the anchor, including automatic color and no underline, so browser link defaults do not override them.
+
+## Fidelity improvements in v0.13.0
+
+The v0.13.0 renderer preserves more layout metadata while keeping the existing fragment and standalone entry points compatible:
+
+- Paragraph pagination hints map to `break-before`, `break-after`, `break-inside`, `widows`, and `orphans`. These are browser hints; the renderer does not expose a Word-compatible screen pagination engine.
+- Standalone paper previews emit section-aware `goword-header` and `goword-footer` containers. A single section with one default header and footer enables fixed repetition for printing. First-page, even-page, and multi-section variants remain explicit containers and are not incorrectly repeated.
+- Repeating table header rows use `<thead>`, body rows use `<tbody>`, `cantSplit` maps to `break-inside:avoid`, and fixed table layout, borders, spacing, cell padding, and row heights are emitted when present.
+- Drawing images preserve EMU dimensions, alignment, margins, offsets, and common inline/square/tight/behind/in-front wrapping modes. Unknown wrapping values remain visible and produce an `HTMLDiagnostic` (or a strict-mode error).
+- Theme font and color references are resolved from `word/theme/theme1.xml` when available. Direct font and color values take precedence; missing theme values are omitted instead of producing invalid CSS. `FallbackFont`, letter spacing, font scaling, character position, whitespace, custom tab size, and hyphenation hints are also emitted.
+
+These additions improve readable screen output and browser printing, but they do not promise pixel-identical Word pagination. Validate representative documents with the target browser and print settings.
 
 ## API reference
 
@@ -164,12 +176,12 @@ The style restoration described below requires v0.12.1 or later; paper layout an
 
 | Content | Output and boundary |
 | --- | --- |
-| Paragraphs, headings, text runs, links | Semantic tags, inline breaks, fonts, sizes, colors, emphasis, underlining, shading, alignment, indentation, paragraph spacing and line spacing. Body and table-cell paragraphs resolve document defaults, default paragraph styles, and named paragraph/character styles through `basedOn`; direct formatting overrides inherited values. Heading names and outline levels work with numeric style IDs. Theme fonts/colors and the full Word style cascade remain incomplete |
+| Paragraphs, headings, text runs, links | Semantic tags, inline breaks, fonts, sizes, colors, emphasis, underlining, shading, alignment, indentation, paragraph spacing, line spacing, pagination hints, custom tab size, and hyphenation hints. Body and table-cell paragraphs resolve document defaults, default paragraph styles, and named paragraph/character styles through `basedOn`; direct formatting overrides inherited values. Heading names and outline levels work with numeric style IDs. Common theme font/color references are resolved when the theme part is present; complex Word style features remain incomplete |
 | Lists | Nested lists, common decimal/letter/Roman formats, Chinese counting, start values and continuation by numbering ID; custom composite labels and all Word restart rules are not fully reproduced |
-| Tables | Nested tables and DOM merge properties map to HTML, including `rowspan` / `colspan`; reading arbitrary DOCX merge properties remains limited |
+| Tables | Nested tables and DOM merge properties map to HTML, including `rowspan` / `colspan`; fixed layout, borders, spacing, cell padding, repeating header rows and unbreakable rows are emitted when present; reading arbitrary DOCX merge properties remains limited |
 | Bookmarks | DOM bookmarks become anchors and internal links target them |
 | Sections and page breaks | Multiple sections use `section` and `data-break-type`; explicit page breaks use `goword-page-break`. Section break metadata does not implement Word pagination |
-| Headers and footers | Optional content with `data-type` (`default`, `first`, `even`); no page-dependent selection or repetition, and imported header/footer graphics remain limited |
+| Headers and footers | Optional section containers with `data-type` (`default`, `first`, `even`). A simple single-section default pair is repeated in print with fixed CSS; complex page-dependent selection is retained as explicit DOM and is not automatically simulated. Imported header/footer graphics remain limited |
 | Images | Available drawing images with size/alt metadata; missing embedded references are retained for diagnostics. External linked drawings and VML are not fully supported |
 | Notes, comments, shapes, formulas | DOM containers can expose text; imported references, geometry and equation layout are incomplete. Unsupported retained elements produce placeholders |
 
@@ -178,6 +190,13 @@ Conversion aims at readable HTML, not pixel-identical Word pages. A successful s
 <a id="upgrading-to-v0-12-0"></a>
 <a id="upgrading-to-v0-12-1"></a>
 
+## Upgrading to v0.13.0
+
+```sh
+go get github.com/yunkeweb/go-word@v0.13.0
+```
+
+v0.13.0 preserves additional pagination hints, table layout metadata, image wrapping metadata, common theme font/color references, and simple default header/footer print repetition. Existing fragment output and zero-value `HTMLOptions` remain compatible. Screen output still does not implement Word automatic pagination. Review HTML snapshots and custom CSS when you depend on table borders, cell padding, theme fonts, or header/footer placement.
 ## Upgrading to v0.12.2
 
 ```sh

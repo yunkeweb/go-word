@@ -51,21 +51,22 @@ features:
   <a href="https://github.com/yunkeweb/go-word/actions/workflows/test.yml"><img src="https://github.com/yunkeweb/go-word/actions/workflows/test.yml/badge.svg" alt="CI" /></a>
   <a href="https://github.com/yunkeweb/go-word/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-LGPL%20v3-blue.svg" alt="License: LGPL v3" /></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.21+-00ADD8?logo=go" alt="Go 1.21+" /></a>
-  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.12.2"><img src="https://img.shields.io/badge/release-v0.12.2-green.svg" alt="v0.12.2" /></a>
+  <a href="https://github.com/yunkeweb/go-word/releases/tag/v0.13.0"><img src="https://img.shields.io/badge/release-v0.13.0-green.svg" alt="v0.13.0" /></a>
 </p>
 
 ## 读取与模板 API
 
 读取器现在恢复 section 页面属性、常用页眉页脚、脚注尾注、批注、修订和列表编号。模板替换支持跨相邻 Word 文本 run 的宏。`NewWithOptions` 提供隔离的文档默认值，`ValidatePackage` 提供包诊断。详见[读取与诊断](/zh/guide/diagnostics)。
 
-## v0.12.2 更新
+## v0.13.0 更新
 
 - 带内置 CSS 的完整 HTML 按分节纸张尺寸、方向与页边距显示居中纸张预览，窄屏也保留 DOCX 版心宽度。
+- 保留段落分页提示、分节页眉页脚、重复表头、固定表格布局、图片环绕元数据及常见主题字体/颜色引用。
 - 通过具名打印页面规则设置分节纸张属性，超链接明确指定的颜色与下划线设置直接应用到链接元素。
 - 屏幕预览向下延伸，不复现 Word 自动分页；片段和不带内置 CSS 的完整页面保持流式布局。
 - [完整指南与升级说明](/zh/guide/docx-to-html) 包含选项、兼容性及保真边界；同时包含 v0.12.1 的 DOCX 样式还原修复。
 
-查看 [v0.12.2 发行版](https://github.com/yunkeweb/go-word/releases/tag/v0.12.2) 与 [更新日志](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md)。
+查看 [v0.13.0 发行版](https://github.com/yunkeweb/go-word/releases/tag/v0.13.0) 与 [更新日志](https://github.com/yunkeweb/go-word/blob/main/CHANGELOG.md)。
 
 ## 核心优势
 
@@ -135,7 +136,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.12.2", 1)
+	sec.AddTitle("GoWord v0.13.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -146,7 +147,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.12.2
+go get github.com/yunkeweb/go-word@v0.13.0
 ```
 
 接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)、[SDT](/zh/guide/sdt)、[表格](/zh/guide/table)、[水印与保护](/zh/guide/protect)，以及四份 [企业级实战案例](/zh/guide/recipes)。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。

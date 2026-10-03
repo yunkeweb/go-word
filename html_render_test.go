@@ -67,7 +67,7 @@ func TestRenderHTMLStandaloneUsesSectionPageGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := string(got)
+	s := html.UnescapeString(string(got))
 	for _, want := range []string{
 		"width:800px;min-height:1120px",
 		"padding:96px 120px 96px 120px",
@@ -79,6 +79,315 @@ func TestRenderHTMLStandaloneUsesSectionPageGeometry(t *testing.T) {
 		}
 	}
 	assertHTMLStructure(t, s)
+}
+
+func TestRenderHTMLParagraphPaginationStyles(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddText("keep with next", style.Font{}, style.Paragraph{KeepNext: true})
+	sec.AddText("keep lines", style.Font{}, style.Paragraph{KeepLines: true})
+	falseWidowControl := false
+	sec.AddText("allow widow", style.Font{}, style.Paragraph{WidowControl: &falseWidowControl})
+	trueWidowControl := true
+	sec.AddText("control widow", style.Font{}, style.Paragraph{WidowControl: &trueWidowControl})
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`<p style="break-after:avoid">keep with next</p>`,
+		`<p style="break-inside:avoid">keep lines</p>`,
+		`<p style="widows:1;orphans:1">allow widow</p>`,
+		`<p style="widows:2;orphans:2">control widow</p>`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+}
+
+func TestRenderHTMLStandaloneHeaderFooterContainers(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddHeader(element.HeaderFirst).AddText("first header")
+	sec.AddFooter(element.HeaderEven).AddText("even footer")
+	sec.AddText("body")
+	got, err := doc.RenderHTML(HTMLOptions{
+		Standalone:            true,
+		IncludeCSS:            true,
+		IncludeHeadersFooters: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`<header data-type="first" class="goword-header" data-section="1">`,
+		`<footer data-type="even" class="goword-footer" data-section="1">`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+	fragment, err := doc.RenderHTML(HTMLOptions{IncludeHeadersFooters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(fragment), "goword-header") || strings.Contains(string(fragment), "data-section=\"1\"") {
+		t.Fatalf("fragment output unexpectedly gained page-only header metadata: %s", fragment)
+	}
+}
+
+func TestRenderHTMLStandaloneRepeatsOnlySimpleDefaultHeaderFooter(t *testing.T) {
+	doc := New()
+	sec := doc.AddSection()
+	sec.AddHeader().AddText("header")
+	sec.AddFooter().AddText("footer")
+	got, err := doc.RenderHTML(HTMLOptions{Standalone: true, IncludeCSS: true, IncludeHeadersFooters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	if !strings.Contains(s, `<body class="goword-document" data-repeat-header="true" data-repeat-footer="true">`) {
+		t.Fatalf("simple default header/footer did not enable print repetition: %s", s)
+	}
+
+	doc = New()
+	sec = doc.AddSection()
+	sec.AddHeader(element.HeaderFirst).AddText("first header")
+	sec.AddFooter(element.HeaderEven).AddText("even footer")
+	got, err = doc.RenderHTML(HTMLOptions{Standalone: true, IncludeCSS: true, IncludeHeadersFooters: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), `<body class="goword-document" data-repeat-header=`) || strings.Contains(string(got), `<body class="goword-document" data-repeat-footer=`) {
+		t.Fatalf("variant header/footer incorrectly enabled repetition: %s", got)
+	}
+}
+
+func TestRenderHTMLTablePaginationAndFixedLayout(t *testing.T) {
+	doc := New()
+	table := doc.AddSection().AddTable(style.Table{Width: 3000, Layout: "fixed"})
+	header := table.AddRow()
+	header.SetHeader(true)
+	header.AddCell(1500).AddText("header")
+	body := table.AddRow()
+	body.SetCantSplit(true)
+	body.AddCell(1500).AddText("body")
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`<table style="border-collapse:collapse;width:200px;table-layout:fixed">`,
+		`<thead><tr><td style="width:100px">`,
+		`</td></tr></thead><tbody><tr style="break-inside:avoid"><td style="width:100px">`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+}
+
+func TestRenderHTMLTableBordersSpacingAndCellPadding(t *testing.T) {
+	doc := New()
+	table := doc.AddSection().AddTable(style.Table{
+		Width:          3000,
+		CellSpacingVal: 60,
+		Borders:        style.Borders{Top: style.Border{Style: "single", Size: 8, Color: "112233"}},
+	})
+	cell := table.AddRow().AddCell(1500, style.Cell{
+		PaddingTop:    60,
+		PaddingRight:  120,
+		PaddingBottom: 180,
+		PaddingLeft:   240,
+		Borders:       style.Borders{Bottom: style.Border{Style: "single", Size: 4, Color: "445566"}},
+	})
+	cell.AddText("padded")
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`border-spacing:4px`,
+		`border-top:1pt solid #112233`,
+		`padding-top:4px`,
+		`padding-right:8px`,
+		`padding-bottom:12px`,
+		`padding-left:16px`,
+		`border-bottom:0.5pt solid #445566`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+}
+
+func TestRenderHTMLImageLayoutStylesAndEMUFallback(t *testing.T) {
+	doc := New()
+	doc.AddSection().AddImageBytes("photo.png", []byte{1, 2, 3}, style.Image{
+		WidthEMU:      914400,
+		HeightEMU:     457200,
+		Alignment:     "right",
+		WrappingStyle: style.WrappingSquare,
+		MarginTop:     4,
+		MarginRight:   8,
+		OffsetX:       2,
+		OffsetY:       3,
+		AltText:       "photo",
+	})
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`width="96"`,
+		`height="48"`,
+		`style="float:right;margin-top:4px;margin-right:8px;position:relative;left:2px;top:3px"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+}
+
+func TestRenderHTMLUnknownImageWrappingProducesDiagnostic(t *testing.T) {
+	doc := New()
+	doc.AddSection().AddImageBytes("photo.png", []byte{1, 2, 3}, style.Image{WrappingStyle: "unsupported-wrap"})
+	result, err := doc.RenderHTMLWithDiagnostics(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Diagnostics) != 1 || result.Diagnostics[0].ElementType != "Image" || !strings.Contains(result.Diagnostics[0].Message, "wrapping") {
+		t.Fatalf("diagnostics=%+v", result.Diagnostics)
+	}
+	if !strings.Contains(string(result.HTML), "<img") {
+		t.Fatalf("image was dropped after layout diagnostic: %s", result.HTML)
+	}
+	if _, err := doc.RenderHTML(HTMLOptions{Strict: true}); err == nil {
+		t.Fatal("strict mode accepted unsupported image wrapping")
+	}
+}
+
+func TestRenderHTMLAdvancedFontFallbackAndMetrics(t *testing.T) {
+	doc := New()
+	doc.AddSection().AddText("metrics", style.Font{
+		Name:         "Primary Font",
+		FallbackFont: "Fallback Font",
+		Spacing:      30,
+		Scale:        80,
+		Position:     2,
+		WhiteSpace:   "preserve",
+	})
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := html.UnescapeString(string(got))
+	for _, want := range []string{
+		`font-family:"Primary Font","Fallback Font"`,
+		"letter-spacing:2px",
+		"font-stretch:80%",
+		"vertical-align:1pt",
+		"white-space:pre-wrap",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+}
+
+func TestWordThemeFontsAndColorsResolveForHTML(t *testing.T) {
+	themeXML := `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="x"><a:accent1><a:srgbClr val="336699"/></a:accent1></a:clrScheme><a:fontScheme name="x"><a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface="Noto Sans CJK"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/><a:ea typeface="Noto Sans CJK SC"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>`
+	theme, err := parseWordTheme([]byte(themeXML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet := &wordStyleSheet{theme: theme}
+	font := sheet.font(style.Font{}, wordRunProperties{
+		Fonts: &struct {
+			ASCII         string `xml:"ascii,attr"`
+			HighANSI      string `xml:"hAnsi,attr"`
+			EastAsia      string `xml:"eastAsia,attr"`
+			ASCIITheme    string `xml:"asciiTheme,attr"`
+			HighANSITheme string `xml:"hAnsiTheme,attr"`
+			EastAsiaTheme string `xml:"eastAsiaTheme,attr"`
+		}{ASCIITheme: "majorAscii", EastAsiaTheme: "minorEastAsia"},
+		Color: &wordColor{ThemeColor: "accent1"},
+	})
+	if font.Name != "Noto Sans CJK SC" || font.Color != "336699" {
+		t.Fatalf("theme resolution = %+v", font)
+	}
+	major := sheet.font(style.Font{}, wordRunProperties{Fonts: &struct {
+		ASCII         string `xml:"ascii,attr"`
+		HighANSI      string `xml:"hAnsi,attr"`
+		EastAsia      string `xml:"eastAsia,attr"`
+		ASCIITheme    string `xml:"asciiTheme,attr"`
+		HighANSITheme string `xml:"hAnsiTheme,attr"`
+		EastAsiaTheme string `xml:"eastAsiaTheme,attr"`
+	}{ASCIITheme: "majorAscii"}})
+	if major.Name != "Aptos Display" {
+		t.Fatalf("major theme font = %q", major.Name)
+	}
+	doc := New()
+	doc.AddSection().AddText("theme", font)
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := html.UnescapeString(string(got))
+	for _, want := range []string{`font-family:"Noto Sans CJK SC"`, `color:#336699`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
+}
+
+func TestRenderHTMLParagraphTabsAndHyphenation(t *testing.T) {
+	doc := New()
+	doc.AddSection().AddText("tabs", style.Font{}, style.Paragraph{
+		Tabs:                []style.Tab{{Pos: 720}},
+		SuppressAutoHyphens: true,
+	})
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"tab-size:48px", "hyphens:none"} {
+		if !strings.Contains(string(got), want) {
+			t.Fatalf("HTML missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestRenderHTMLParagraphIndentSpacingAndBorders(t *testing.T) {
+	doc := New()
+	doc.AddSection().AddText("layout", style.Font{}, style.Paragraph{
+		Indentation: style.Indentation{Left: 360, FirstLine: 240},
+		Spacing:     style.Spacing{Before: 120, After: 180, Line: 360, Rule: "exact"},
+		Borders:     style.Borders{Bottom: style.Border{Style: "single", Size: 8, Color: "123456"}},
+	})
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{
+		`margin-left:24px`,
+		`text-indent:16px`,
+		`margin-top:8px`,
+		`margin-bottom:12px`,
+		`line-height:24px`,
+		`border-bottom:1pt solid #123456`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("HTML missing %q: %s", want, s)
+		}
+	}
 }
 
 func TestRenderHTMLListsTablesAndImage(t *testing.T) {

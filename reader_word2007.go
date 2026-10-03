@@ -88,6 +88,24 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return nil, e
 	}
+	if styles != nil {
+		for _, rel := range rels {
+			if !strings.HasSuffix(rel.Type, "/theme") || strings.Contains(rel.Target, "://") {
+				continue
+			}
+			target := path.Clean(path.Join("word", rel.Target))
+			themeRaw, e := zr.ReadFileWithLimit(target, opts.partLimit())
+			if e == nil {
+				styles.theme, e = parseWordTheme(themeRaw)
+				if e != nil {
+					return nil, e
+				}
+			} else if !errors.Is(e, os.ErrNotExist) {
+				return nil, e
+			}
+			break
+		}
+	}
 	images := map[string]documentImage{}
 	for id, rel := range rels {
 		if !strings.HasSuffix(rel.Type, "/image") || strings.Contains(rel.Target, "://") {
