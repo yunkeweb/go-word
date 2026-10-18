@@ -123,18 +123,38 @@ func NewCheckBox(name, text string, font, para any) *CheckBox {
 // Field is a Word field (PAGE, DATE, ...).
 type Field struct {
 	Base
-	FieldType  string
-	Properties map[string]string
-	Options    []string
-	Text       string
-	FontStyle  any
+	FieldType   string
+	Instruction string
+	Properties  map[string]string
+	Options     []string
+	Text        string
+	HasResult   bool
+	Diagnostic  string
+	FontStyle   any
 }
 
 func (f *Field) Type() string { return "Field" }
 
 func NewField(typ string, props map[string]string, options []string, text string) *Field {
-	return &Field{FieldType: typ, Properties: props, Options: options, Text: text}
+	return &Field{FieldType: typ, Instruction: typ, Properties: props, Options: options, Text: text, HasResult: text != ""}
 }
+
+// NoteReference points from body content to a footnote or endnote.
+type NoteReference struct {
+	Base
+	NoteID int
+	Kind   string // footnote or endnote
+}
+
+func (n *NoteReference) Type() string { return "NoteReference" }
+
+// CommentReference points from body content to a comment range.
+type CommentReference struct {
+	Base
+	CommentID int
+}
+
+func (c *CommentReference) Type() string { return "CommentReference" }
 
 // Line is a VML line.
 type Line struct {

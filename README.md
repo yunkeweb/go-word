@@ -32,16 +32,18 @@ Also included: tables with nested cells, headers/footers, images, lists, footnot
 ## Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.13.0
+go get github.com/yunkeweb/go-word@v0.14.0
 ```
 
 Requires **Go 1.21+**.
 
-## DOCX to HTML in v0.13.0
+## DOCX to HTML in v0.14.0
 
 `RenderHTMLFile` returns HTML bytes. Save them with `os.WriteFile`, or load a document and use `Document.WriteHTML` for direct writer output. The [DOCX to HTML guide](https://go-word.yunkeweb.com/guide/docx-to-html) includes complete programs, all seven entry points, image handling, diagnostics, and ZIP read limits.
 
-The renderer supports nested lists and numbering, DOM table merges, bookmarks, section boundaries, and optional headers/footers. Conversion targets readable HTML; Word pagination and arbitrary DOCX fidelity are not guaranteed. Strict mode checks retained DOM elements, not content omitted during reading.
+The renderer supports nested lists and numbering, DOM table merges, bookmarks, section boundaries, optional headers/footers, cached fields, notes and comments, tracked revisions, and read-only content controls. Conversion targets readable HTML; Word pagination and arbitrary DOCX fidelity are not guaranteed. Strict mode checks retained DOM elements, not content omitted during reading.
+
+**v0.14.0 content integrity:** Cached field results remain visible, dangling note/comment references keep their numbers without broken links, and `RevisionMode` selects final, original, or markup output. Structured document tags retain their visible value and metadata without generating form submission or script behavior.
 
 When upgrading, use keyed `style.ListItem` and `style.Spacing` literals: these types add `Start` and `BeforeSet`/`AfterSet`, respectively. See the [upgrade notes](https://go-word.yunkeweb.com/guide/docx-to-html#upgrading-to-v0-13-0) and [changelog](CHANGELOG.md).
 
@@ -78,7 +80,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.13.0", 1)
+	sec.AddTitle("GoWord v0.14.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

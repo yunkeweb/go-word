@@ -56,6 +56,12 @@ func CloneElement(el Element) Element {
 			c.Options = append([]string(nil), v.Options...)
 		}
 		return &c
+	case *NoteReference:
+		c := *v
+		return &c
+	case *CommentReference:
+		c := *v
+		return &c
 	case *Line:
 		c := *v
 		return &c

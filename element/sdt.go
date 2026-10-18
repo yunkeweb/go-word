@@ -36,6 +36,7 @@ type SDT struct {
 	Value         string
 	Placeholder   string
 	DateFormat    string
+	Diagnostic    string
 	Locale        string
 	Lock          string
 	ID            int
@@ -43,6 +44,7 @@ type SDT struct {
 	ShowingPlcHdr bool
 	MultiLine     bool
 	ListItems     []SDTListItem
+	IsBlock       bool
 }
 
 func (s *SDT) Type() string { return "SDT" }

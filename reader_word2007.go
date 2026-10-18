@@ -140,6 +140,34 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	if err := loadNoteParts(zr, opts, doc, rels); err != nil {
 		return nil, err
 	}
+	commentsByID := make(map[int]*element.Comment, len(doc.comments))
+	for _, comment := range doc.comments {
+		if comment != nil && comment.CommentID >= 0 && commentsByID[comment.CommentID] == nil {
+			commentsByID[comment.CommentID] = comment
+		}
+	}
+	walkDocument(doc, func(el element.Element) {
+		if ranged, ok := el.(interface {
+			GetCommentRangeStart() *element.Comment
+			SetCommentRangeStart(*element.Comment)
+		}); ok {
+			if marker := ranged.GetCommentRangeStart(); marker != nil {
+				if comment := commentsByID[marker.CommentID]; comment != nil {
+					ranged.SetCommentRangeStart(comment)
+				}
+			}
+		}
+		if ranged, ok := el.(interface {
+			GetCommentRangeEnd() *element.Comment
+			SetCommentRangeEnd(*element.Comment)
+		}); ok {
+			if marker := ranged.GetCommentRangeEnd(); marker != nil {
+				if comment := commentsByID[marker.CommentID]; comment != nil {
+					ranged.SetCommentRangeEnd(comment)
+				}
+			}
+		}
+	})
 	if core, err := zr.ReadFileWithLimit("docProps/core.xml", opts.partLimit()); err == nil {
 		parseCoreProperties(core, doc.info)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -254,7 +282,7 @@ func parseNotePart(data []byte, kind string) parsedNotes {
 			switch localName(t.Name) {
 			case "footnote", "endnote", "comment":
 				noteID = atoi(attr(t, "id"))
-				active = noteID > 0
+				active = noteID >= 0
 				author, initials, date = attr(t, "author"), attr(t, "initials"), attr(t, "date")
 			case "t", "delText":
 				var s string
@@ -273,6 +301,240 @@ func parseNotePart(data []byte, kind string) parsedNotes {
 		}
 	}
 	return out
+}
+
+func parseSimpleField(dec *xml.Decoder, start xml.StartElement) (*element.Field, error) {
+	instruction := strings.TrimSpace(attr(start, "instr"))
+	var result strings.Builder
+	depth := 1
+	for depth > 0 {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			depth++
+			if localName(t.Name) == "t" || localName(t.Name) == "delText" {
+				var s string
+				if err := dec.DecodeElement(&s, &t); err != nil {
+					return nil, err
+				}
+				result.WriteString(s)
+				depth--
+			}
+		case xml.EndElement:
+			depth--
+		}
+	}
+	fieldType := fieldTypeFromInstruction(instruction)
+	f := element.NewField(fieldType, nil, nil, result.String())
+	f.Instruction = instruction
+	f.HasResult = result.Len() > 0
+	return f, nil
+}
+
+func fieldTypeFromInstruction(instruction string) string {
+	parts := strings.Fields(instruction)
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.ToUpper(parts[0])
+}
+
+func parseSDT(dec *xml.Decoder, start xml.StartElement) (*element.SDT, error) {
+	s := &element.SDT{SDTType: element.SDTTypeRichText}
+	s.Kind = "SDT"
+	depth := 1
+	inContent := false
+	var text strings.Builder
+	var contentRun *element.TextRun
+	var runText strings.Builder
+	var runFont style.Font
+	knownType := false
+	flushRun := func() {
+		if runText.Len() == 0 {
+			return
+		}
+		if contentRun == nil {
+			contentRun = s.AddTextRun()
+		}
+		font := any(nil)
+		if !runFont.IsZero() {
+			font = runFont
+		}
+		contentRun.AddText(runText.String(), font)
+		text.WriteString(runText.String())
+		runText.Reset()
+	}
+	for depth > 0 {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			local := localName(t.Name)
+			depth++
+			switch local {
+			case "sdtPr":
+				if err := parseSDTProperties(dec, s, &knownType); err != nil {
+					return nil, err
+				}
+				depth--
+			case "sdtContent":
+				inContent = true
+			case "p":
+				if inContent {
+					s.IsBlock = true
+					flushRun()
+					contentRun = nil
+				}
+			case "r":
+				if inContent {
+					flushRun()
+					runFont = style.Font{}
+				}
+			case "rPr":
+				if inContent {
+					var properties wordRunProperties
+					if err := dec.DecodeElement(&properties, &t); err != nil {
+						return nil, err
+					}
+					properties.apply(&runFont, false, nil)
+					depth--
+				}
+			case "t", "delText":
+				var value string
+				if err := dec.DecodeElement(&value, &t); err != nil {
+					return nil, err
+				}
+				if inContent {
+					runText.WriteString(value)
+				}
+				depth--
+			case "br", "cr":
+				if inContent {
+					flushRun()
+					if contentRun == nil {
+						contentRun = s.AddTextRun()
+					}
+					contentRun.AddTextBreak()
+					text.WriteByte('\n')
+				}
+			}
+		case xml.EndElement:
+			local := localName(t.Name)
+			if local == "sdtContent" {
+				flushRun()
+				inContent = false
+			}
+			if local == "p" && inContent {
+				flushRun()
+				contentRun = nil
+			}
+			if local == "r" && inContent {
+				flushRun()
+				runFont = style.Font{}
+			}
+			depth--
+		}
+	}
+	s.Value = text.String()
+	if !knownType {
+		s.Diagnostic = "unknown content control type; preserved visible content as text"
+	}
+	// The content runs above are the source of truth. Keep a plain fallback only
+	// for controls whose content contains no supported run element.
+	if s.Value != "" && len(s.Elements()) == 0 {
+		if s.IsBlock {
+			s.AddText(s.Value)
+		} else {
+			s.AddTextRun().AddText(s.Value)
+		}
+	}
+	if s.SDTType == element.SDTTypeCheckbox {
+		if s.Value == "" {
+			s.SetChecked(s.Checked)
+		}
+	} else if s.Value == "" && s.ShowingPlcHdr {
+		s.Placeholder = sdtPlaceholder(s.SDTType)
+		s.Value = s.Placeholder
+	} else if s.Value != "" && !s.ShowingPlcHdr {
+		s.ShowingPlcHdr = false
+	}
+	return s, nil
+}
+
+func sdtPlaceholder(typ string) string {
+	switch typ {
+	case element.SDTTypeDate:
+		return "Click or tap to enter a date."
+	case element.SDTTypeDropDown, element.SDTTypeComboBox:
+		return "Choose an item."
+	default:
+		return "Click or tap to enter text."
+	}
+}
+
+func parseSDTProperties(dec *xml.Decoder, s *element.SDT, knownType *bool) error {
+	depth := 1
+	for depth > 0 {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			local := localName(t.Name)
+			depth++
+			switch local {
+			case "alias":
+				s.Alias = attr(t, "val")
+			case "tag":
+				s.Tag = attr(t, "val")
+			case "id":
+				s.ID = atoi(attr(t, "val"))
+			case "text":
+				s.SDTType = element.SDTTypePlainText
+				*knownType = true
+				s.MultiLine = onOffTrue(t)
+			case "richText":
+				s.SDTType = element.SDTTypeRichText
+				*knownType = true
+			case "comboBox":
+				s.SDTType = element.SDTTypeComboBox
+				*knownType = true
+			case "dropDownList":
+				s.SDTType = element.SDTTypeDropDown
+				*knownType = true
+			case "date":
+				s.SDTType = element.SDTTypeDate
+				*knownType = true
+			case "dateFormat":
+				s.DateFormat = attr(t, "val")
+			case "lock":
+				s.Lock = attr(t, "val")
+			case "placeholder":
+				// The document-part metadata is separate from currently showing the placeholder.
+			case "showingPlcHdr":
+				s.ShowingPlcHdr = true
+			case "docPart":
+				// Metadata-only child; its value is not needed for read-only HTML.
+			case "checkbox":
+				s.SDTType = element.SDTTypeCheckbox
+				*knownType = true
+				s.Checked = false
+			case "checked":
+				s.Checked = onOffTrue(t)
+			case "listItem":
+				s.ListItems = append(s.ListItems, element.SDTListItem{Value: attr(t, "value"), DisplayText: attr(t, "displayText")})
+			}
+		case xml.EndElement:
+			depth--
+		}
+	}
+	return nil
 }
 
 func parseNumberingPart(data []byte) map[int]map[int]style.ListItem {
@@ -571,16 +833,28 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem, images map[string]documentImage, styles *wordStyleSheet) error {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
-		frames        []tblFrame
-		inHyper       bool
-		runBuf        strings.Builder
-		hyperTarget   string
-		hyperInternal bool
-		paraFormat    wordParagraphFormat
-		bodyRun       *element.TextRun
-		font          style.Font
-		track         *element.TrackChange
+		frames              []tblFrame
+		inHyper             bool
+		runBuf              strings.Builder
+		hyperTarget         string
+		hyperInternal       bool
+		paraFormat          wordParagraphFormat
+		bodyRun             *element.TextRun
+		font                style.Font
+		track               *element.TrackChange
+		field               *element.Field
+		fieldStage          string
+		fieldMalformed      bool
+		fieldInstr          strings.Builder
+		fieldResult         strings.Builder
+		contentNodeID       int
+		pendingCommentStart *element.Comment
+		lastInline          element.Element
 	)
+	nextContentID := func(kind string) string {
+		contentNodeID++
+		return kind + "-" + strconv.Itoa(contentNodeID)
+	}
 	currentCell := func() *element.Cell {
 		if len(frames) == 0 {
 			return nil
@@ -612,15 +886,71 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 		if t == "" {
 			return
 		}
+		if field != nil {
+			if fieldStage == "result" {
+				fieldResult.WriteString(t)
+				return
+			}
+		}
 		if inHyper {
 			link := currentRun().AddLink(hyperTarget, t, runFont(), nil, hyperInternal)
 			link.SetTrackChange(track)
+			if pendingCommentStart != nil {
+				link.SetCommentRangeStart(pendingCommentStart)
+				pendingCommentStart = nil
+			}
+			lastInline = link
 			return
 		}
 		tx := currentRun().AddText(t, runFont())
 		if track != nil {
 			tx.SetTrackChange(track)
 		}
+		if pendingCommentStart != nil {
+			tx.SetCommentRangeStart(pendingCommentStart)
+			pendingCommentStart = nil
+		}
+		lastInline = tx
+	}
+	appendInline := func(el element.Element) {
+		if el == nil {
+			return
+		}
+		if c := currentCell(); c != nil {
+			currentRun().AppendElement(el)
+			return
+		}
+		if bodyRun != nil {
+			currentRun().AppendElement(el)
+			return
+		}
+		sec.AppendElement(el)
+	}
+	finishField := func() {
+		if field == nil {
+			return
+		}
+		field.Instruction = strings.TrimSpace(fieldInstr.String())
+		if field.Instruction == "" {
+			field.Instruction = field.FieldType
+		}
+		if field.FieldType == "" {
+			field.FieldType = fieldTypeFromInstruction(field.Instruction)
+		}
+		field.Text = fieldResult.String()
+		field.HasResult = fieldStage == "result" && field.Text != ""
+		if fieldMalformed {
+			field.Diagnostic = "malformed complex field structure; preserved available result text"
+		}
+		field.FontStyle = runFont()
+		field.DocPart = "word/document.xml"
+		field.ElementID = nextContentID("field")
+		appendInline(field)
+		field = nil
+		fieldStage = ""
+		fieldMalformed = false
+		fieldInstr.Reset()
+		fieldResult.Reset()
 	}
 	flushHyperlink := func() {
 		flushRun()
@@ -630,6 +960,10 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 	}
 	flushPara := func() {
 		flushRun()
+		if field != nil {
+			fieldMalformed = true
+			finishField()
+		}
 		pNumID, pLevel := paraFormat.numID, paraFormat.level
 		para := paraFormat.para
 		listStyle := style.ListItem{NumId: pNumID, Depth: pLevel, ListType: style.ListTypeNumber, Format: style.NumberDecimal}
@@ -692,6 +1026,11 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 			local := localName(t.Name)
 			switch local {
 			case "p":
+				if field != nil {
+					flushRun()
+					fieldMalformed = true
+					finishField()
+				}
 				paraFormat = styles.paragraph(wordParagraphProperties{})
 				if c := currentCell(); c != nil {
 					frames[len(frames)-1].para = c.AddTextRun()
@@ -714,6 +1053,79 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 				font = styles.font(paraFormat.font, properties)
 			case "ins", "del":
 				track = &element.TrackChange{ChangeType: local, Author: attr(t, "author"), Date: attr(t, "date")}
+			case "fldSimple":
+				flushRun()
+				f, err := parseSimpleField(dec, t)
+				if err != nil {
+					return err
+				}
+				f.DocPart = "word/document.xml"
+				f.ElementID = nextContentID("field")
+				f.FontStyle = runFont()
+				appendInline(f)
+			case "fldChar":
+				switch attr(t, "fldCharType") {
+				case "begin":
+					flushRun()
+					if field != nil {
+						fieldMalformed = true
+					}
+					finishField()
+					field = &element.Field{}
+					fieldStage = "instruction"
+				case "separate":
+					if field != nil {
+						fieldStage = "result"
+					}
+				case "end":
+					flushRun()
+					finishField()
+				}
+			case "instrText":
+				var s string
+				if err := dec.DecodeElement(&s, &t); err != nil {
+					return err
+				}
+				if field != nil && fieldStage == "instruction" {
+					fieldInstr.WriteString(s)
+				}
+			case "footnoteReference", "endnoteReference":
+				flushRun()
+				kind := "footnote"
+				if local == "endnoteReference" {
+					kind = "endnote"
+				}
+				ref := &element.NoteReference{NoteID: atoi(attr(t, "id")), Kind: kind}
+				ref.DocPart, ref.ElementID = "word/document.xml", nextContentID(kind+"-reference")
+				appendInline(ref)
+			case "commentReference":
+				flushRun()
+				ref := &element.CommentReference{CommentID: atoi(attr(t, "id"))}
+				ref.DocPart, ref.ElementID = "word/document.xml", nextContentID("comment-reference")
+				appendInline(ref)
+				lastInline = ref
+			case "commentRangeStart":
+				pendingCommentStart = &element.Comment{CommentID: atoi(attr(t, "id"))}
+				pendingCommentStart.Kind = "Comment"
+			case "commentRangeEnd":
+				if target, ok := lastInline.(interface{ SetCommentRangeEnd(*element.Comment) }); ok {
+					marker := &element.Comment{CommentID: atoi(attr(t, "id"))}
+					marker.Kind = "Comment"
+					target.SetCommentRangeEnd(marker)
+				}
+			case "sdt":
+				flushRun()
+				s, err := parseSDT(dec, t)
+				if err != nil {
+					return err
+				}
+				s.DocPart, s.ElementID = "word/document.xml", nextContentID("sdt")
+				s.SetTrackChange(track)
+				if currentCell() != nil || bodyRun != nil {
+					appendInline(s)
+				} else {
+					sec.AppendElement(s)
+				}
 			case "hyperlink":
 				flushRun()
 				inHyper = true
@@ -808,7 +1220,11 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 				if err := dec.DecodeElement(&s, &t); err != nil {
 					return err
 				}
-				runBuf.WriteString(s)
+				if field != nil && fieldStage == "result" {
+					fieldResult.WriteString(s)
+				} else {
+					runBuf.WriteString(s)
+				}
 			case "br", "cr":
 				if attr(t, "type") == "page" {
 					if currentCell() != nil {
@@ -862,6 +1278,11 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 				flushRun()
 				font = style.Font{}
 			case "p":
+				if field != nil {
+					flushRun()
+					fieldMalformed = true
+					finishField()
+				}
 				flushPara()
 			case "hyperlink":
 				flushHyperlink()

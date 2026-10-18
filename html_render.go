@@ -32,12 +32,25 @@ type HTMLOptions struct {
 	IncludeHeadersFooters bool
 	IncludeCSS            bool // with Standalone, include built-in CSS and section page geometry
 	Strict                bool
+	RevisionMode          HTMLRevisionMode
 }
+
+// HTMLRevisionMode controls how tracked insertions and deletions are shown.
+type HTMLRevisionMode string
+
+const (
+	HTMLRevisionFinal    HTMLRevisionMode = "final"
+	HTMLRevisionOriginal HTMLRevisionMode = "original"
+	HTMLRevisionMarkup   HTMLRevisionMode = "markup"
+)
 
 // HTMLDiagnostic describes a lossy or unsupported conversion.
 type HTMLDiagnostic struct {
 	ElementType string
 	Message     string
+	Part        string
+	Path        string
+	ID          string
 }
 
 // HTMLRenderResult contains rendered HTML and non-fatal diagnostics.
@@ -146,12 +159,18 @@ func normalizeHTMLOptions(opts HTMLOptions) HTMLOptions {
 }
 
 type htmlRenderer struct {
-	opts        HTMLOptions
-	out         io.Writer
-	err         error
-	diagnostics []HTMLDiagnostic
-	document    *Document
-	listCounts  map[htmlListKey]int
+	opts             HTMLOptions
+	out              io.Writer
+	err              error
+	diagnostics      []HTMLDiagnostic
+	document         *Document
+	listCounts       map[htmlListKey]int
+	diagnosticKeys   map[string]bool
+	footnoteIDs      map[int]bool
+	endnoteIDs       map[int]bool
+	commentIDs       map[int]bool
+	noteRefCounts    map[string]int
+	commentRefCounts map[int]int
 }
 
 func newHTMLRenderer(out io.Writer, opts HTMLOptions) *htmlRenderer {
@@ -163,6 +182,24 @@ type htmlAttr struct{ name, value string }
 func (r *htmlRenderer) renderDocument(d *Document) {
 	r.document = d
 	r.listCounts = make(map[htmlListKey]int)
+	r.diagnosticKeys = make(map[string]bool)
+	r.footnoteIDs, r.endnoteIDs, r.commentIDs = make(map[int]bool), make(map[int]bool), make(map[int]bool)
+	r.noteRefCounts, r.commentRefCounts = make(map[string]int), make(map[int]int)
+	for _, note := range d.GetFootnotes() {
+		if note != nil && note.NoteID >= 0 {
+			r.footnoteIDs[note.NoteID] = true
+		}
+	}
+	for _, note := range d.GetEndnotes() {
+		if note != nil && note.NoteID >= 0 {
+			r.endnoteIDs[note.NoteID] = true
+		}
+	}
+	for _, comment := range d.GetComments() {
+		if comment != nil && comment.CommentID >= 0 {
+			r.commentIDs[comment.CommentID] = true
+		}
+	}
 	var pageNames []string
 	if r.opts.Standalone {
 		r.writeString("<!doctype html><html><head><meta charset=\"utf-8\">")
@@ -240,8 +277,69 @@ func (r *htmlRenderer) renderDocument(d *Document) {
 			r.close("section")
 		}
 	}
+	r.renderDocumentNotes(d)
 	if r.opts.Standalone {
 		r.writeString("</body></html>")
+	}
+}
+
+func (r *htmlRenderer) renderDocumentNotes(d *Document) {
+	seenFootnotes := make(map[int]bool)
+	for _, note := range d.GetFootnotes() {
+		if note == nil || note.NoteID < 0 || seenFootnotes[note.NoteID] {
+			continue
+		}
+		seenFootnotes[note.NoteID] = true
+		r.open("aside", htmlAttr{"id", fmt.Sprintf("goword-footnote-%d", note.NoteID)}, htmlAttr{"class", "goword-footnote"})
+		r.renderElements(note.Elements())
+		if r.noteRefCounts[fmt.Sprintf("goword-footnote-ref-%d", note.NoteID)] > 0 {
+			r.open("a", htmlAttr{"class", "goword-note-backlink"}, htmlAttr{"href", fmt.Sprintf("#goword-footnote-ref-%d", note.NoteID)})
+			r.text("back")
+			r.close("a")
+		}
+		r.close("aside")
+	}
+	seenEndnotes := make(map[int]bool)
+	for _, note := range d.GetEndnotes() {
+		if note == nil || note.NoteID < 0 || seenEndnotes[note.NoteID] {
+			continue
+		}
+		seenEndnotes[note.NoteID] = true
+		r.open("aside", htmlAttr{"id", fmt.Sprintf("goword-endnote-%d", note.NoteID)}, htmlAttr{"class", "goword-endnote"})
+		r.renderElements(note.Elements())
+		if r.noteRefCounts[fmt.Sprintf("goword-endnote-ref-%d", note.NoteID)] > 0 {
+			r.open("a", htmlAttr{"class", "goword-note-backlink"}, htmlAttr{"href", fmt.Sprintf("#goword-endnote-ref-%d", note.NoteID)})
+			r.text("back")
+			r.close("a")
+		}
+		r.close("aside")
+	}
+	seenComments := make(map[int]bool)
+	for _, comment := range d.GetComments() {
+		if comment == nil || comment.CommentID < 0 || seenComments[comment.CommentID] {
+			continue
+		}
+		seenComments[comment.CommentID] = true
+		attrs := []htmlAttr{{"id", fmt.Sprintf("goword-comment-%d", comment.CommentID)}, {"class", "goword-comment"}}
+		if comment.Author != "" {
+			attrs = append(attrs, htmlAttr{"data-author", comment.Author})
+		}
+		if comment.Date != "" {
+			attrs = append(attrs, htmlAttr{"data-date", comment.Date})
+		}
+		r.open("aside", attrs...)
+		if comment.Author != "" {
+			r.open("p", htmlAttr{"class", "goword-comment-author"})
+			r.text(comment.Author)
+			r.close("p")
+		}
+		r.renderElements(comment.Elements())
+		if r.commentRefCounts[comment.CommentID] > 0 {
+			r.open("a", htmlAttr{"class", "goword-comment-backlink"}, htmlAttr{"href", fmt.Sprintf("#goword-comment-ref-%d", comment.CommentID)})
+			r.text("back")
+			r.close("a")
+		}
+		r.close("aside")
 	}
 }
 
@@ -283,7 +381,7 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 	switch v := el.(type) {
 	case *element.Text:
 		r.openStyled("p", paragraphTextStyle(v.ParagraphStyle, []element.Element{v}))
-		r.renderText(v.Content, v.FontStyle)
+		r.renderRevisionText(v.Content, v.GetTrackChange(), v.FontStyle)
 		r.close("p")
 	case *element.PreserveText:
 		r.open("p")
@@ -295,7 +393,7 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 		r.close("p")
 	case *element.ListItem:
 		r.open("p")
-		r.renderText(v.Text, v.FontStyle)
+		r.renderRevisionText(v.Text, v.GetTrackChange(), v.FontStyle)
 		r.close("p")
 	case *element.ListItemRun:
 		r.openStyled("p", paragraphStyle(v.ParagraphStyle))
@@ -330,9 +428,17 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 	case *element.Bookmark:
 		r.open("span", htmlAttr{"id", v.Name})
 		r.close("span")
+	case *element.Field:
+		r.renderField(v)
+	case *element.NoteReference:
+		r.renderNoteReference(v)
+	case *element.CommentReference:
+		r.renderCommentReference(v)
+	case *element.SDT:
+		r.renderSDT(v)
 	case *element.Link:
 		r.open("p")
-		r.renderLink(v)
+		r.renderRevisionLink(v)
 		r.close("p")
 	case *element.Table:
 		r.renderTable(v)
@@ -388,11 +494,11 @@ func (r *htmlRenderer) renderInlineElements(elements []element.Element) {
 	for _, el := range elements {
 		switch v := el.(type) {
 		case *element.Text:
-			r.renderText(v.Content, v.FontStyle)
+			r.renderRevisionText(v.Content, v.GetTrackChange(), v.FontStyle)
 		case *element.PreserveText:
-			r.renderText(v.Content, v.FontStyle)
+			r.renderRevisionText(v.Content, v.GetTrackChange(), v.FontStyle)
 		case *element.Link:
-			r.renderLink(v)
+			r.renderRevisionLink(v)
 		case *element.Image:
 			r.renderImage(v)
 		case *element.TextBreak:
@@ -409,9 +515,246 @@ func (r *htmlRenderer) renderInlineElements(elements []element.Element) {
 			r.renderText(v.Content, v.FontStyle)
 		case *element.FormField:
 			r.renderText(v.Value, v.FontStyle)
+		case *element.Field:
+			r.renderField(v)
+		case *element.NoteReference:
+			r.renderNoteReference(v)
+		case *element.CommentReference:
+			r.renderCommentReference(v)
+		case *element.SDT:
+			r.renderSDT(v)
 		default:
 			r.unsupported(el, "inline element is not mapped to HTML")
 		}
+	}
+}
+
+func (r *htmlRenderer) revisionVisible(tc *element.TrackChange) bool {
+	if tc == nil {
+		return true
+	}
+	mode := r.opts.RevisionMode
+	if mode == "" {
+		mode = HTMLRevisionFinal
+	}
+	if mode == HTMLRevisionOriginal {
+		return tc.ChangeType == "del"
+	}
+	return tc.ChangeType != "del" || mode == HTMLRevisionMarkup
+}
+
+func (r *htmlRenderer) renderRevisionText(text string, tc *element.TrackChange, font any) {
+	if !r.revisionVisible(tc) {
+		return
+	}
+	mode := r.opts.RevisionMode
+	if mode == "" {
+		mode = HTMLRevisionFinal
+	}
+	if mode == HTMLRevisionMarkup && tc != nil {
+		tag := "ins"
+		if tc.ChangeType == "del" {
+			tag = "del"
+		}
+		attrs := []htmlAttr{}
+		if tc.Author != "" {
+			attrs = append(attrs, htmlAttr{"data-author", tc.Author})
+		}
+		if tc.Date != "" {
+			attrs = append(attrs, htmlAttr{"data-date", tc.Date})
+		}
+		r.open(tag, attrs...)
+		r.renderText(text, font)
+		r.close(tag)
+		return
+	}
+	r.renderText(text, font)
+}
+
+func (r *htmlRenderer) renderRevisionLink(v *element.Link) {
+	tc := v.GetTrackChange()
+	if !r.revisionVisible(tc) {
+		return
+	}
+	mode := r.opts.RevisionMode
+	if mode == "" {
+		mode = HTMLRevisionFinal
+	}
+	if mode == HTMLRevisionMarkup && tc != nil {
+		tag := "ins"
+		if tc.ChangeType == "del" {
+			tag = "del"
+		}
+		attrs := []htmlAttr{}
+		if tc.Author != "" {
+			attrs = append(attrs, htmlAttr{"data-author", tc.Author})
+		}
+		if tc.Date != "" {
+			attrs = append(attrs, htmlAttr{"data-date", tc.Date})
+		}
+		r.open(tag, attrs...)
+		r.renderLink(v)
+		r.close(tag)
+		return
+	}
+	r.renderLink(v)
+}
+
+func (r *htmlRenderer) renderField(v *element.Field) {
+	attrs := []htmlAttr{{"class", "goword-field"}, {"data-field", strings.ToUpper(strings.TrimSpace(v.FieldType))}}
+	if v.Instruction != "" {
+		attrs = append(attrs, htmlAttr{"data-instruction", v.Instruction})
+	}
+	r.open("span", attrs...)
+	if v.Diagnostic != "" {
+		r.recordDiagnostic(v, v.Diagnostic, v.DocPart, v.ElementID)
+	}
+	if v.HasResult || v.Text != "" {
+		r.renderText(v.Text, v.FontStyle)
+	} else {
+		r.unsupportedWith(v, "field has no cached result", "word/document.xml", "")
+		r.text("[" + strings.ToUpper(strings.TrimSpace(v.FieldType)) + "]")
+	}
+	r.close("span")
+}
+
+func (r *htmlRenderer) renderNoteReference(v *element.NoteReference) {
+	kind := "footnote"
+	if v.Kind == "endnote" {
+		kind = "endnote"
+	}
+	targetID := fmt.Sprintf("goword-%s-%d", kind, v.NoteID)
+	refBase := fmt.Sprintf("goword-%s-ref-%d", kind, v.NoteID)
+	r.noteRefCounts[refBase]++
+	refID := refBase
+	if r.noteRefCounts[refBase] > 1 {
+		refID = fmt.Sprintf("%s-%d", refBase, r.noteRefCounts[refBase])
+	}
+	id := targetID
+	valid := (kind == "footnote" && r.footnoteIDs[v.NoteID]) || (kind == "endnote" && r.endnoteIDs[v.NoteID])
+	if !valid {
+		r.recordDiagnostic(v, "reference points to a missing or invalid note", v.DocPart, v.ElementID)
+	}
+	r.open("sup", htmlAttr{"class", "goword-note-reference"}, htmlAttr{"data-note-id", strconv.Itoa(v.NoteID)}, htmlAttr{"data-note-kind", kind})
+	if valid {
+		r.open("a", htmlAttr{"id", refID}, htmlAttr{"href", "#" + id})
+	} else {
+		r.open("span", htmlAttr{"class", "goword-missing-reference"})
+	}
+	r.text(strconv.Itoa(v.NoteID))
+	if valid {
+		r.close("a")
+	} else {
+		r.close("span")
+	}
+	r.close("sup")
+}
+
+func (r *htmlRenderer) renderCommentReference(v *element.CommentReference) {
+	id := fmt.Sprintf("goword-comment-%d", v.CommentID)
+	r.commentRefCounts[v.CommentID]++
+	refID := fmt.Sprintf("goword-comment-ref-%d", v.CommentID)
+	if r.commentRefCounts[v.CommentID] > 1 {
+		refID = fmt.Sprintf("%s-%d", refID, r.commentRefCounts[v.CommentID])
+	}
+	valid := r.commentIDs[v.CommentID]
+	if !valid {
+		r.recordDiagnostic(v, "reference points to a missing or invalid comment", v.DocPart, v.ElementID)
+	}
+	r.open("sup", htmlAttr{"class", "goword-comment-reference"}, htmlAttr{"data-comment-id", strconv.Itoa(v.CommentID)})
+	if valid {
+		r.open("a", htmlAttr{"id", refID}, htmlAttr{"href", "#" + id})
+	} else {
+		r.open("span", htmlAttr{"class", "goword-missing-reference"})
+	}
+	r.text(strconv.Itoa(v.CommentID))
+	if valid {
+		r.close("a")
+	} else {
+		r.close("span")
+	}
+	r.close("sup")
+}
+
+func (r *htmlRenderer) renderSDT(v *element.SDT) {
+	tc := v.GetTrackChange()
+	if !r.revisionVisible(tc) {
+		return
+	}
+	if v.Diagnostic != "" {
+		r.recordDiagnostic(v, v.Diagnostic, v.DocPart, v.ElementID)
+	}
+	markup := r.opts.RevisionMode == HTMLRevisionMarkup && tc != nil
+	if markup {
+		tag := "ins"
+		if tc.ChangeType == "del" {
+			tag = "del"
+		}
+		attrs := []htmlAttr{}
+		if tc.Author != "" {
+			attrs = append(attrs, htmlAttr{"data-author", tc.Author})
+		}
+		if tc.Date != "" {
+			attrs = append(attrs, htmlAttr{"data-date", tc.Date})
+		}
+		r.open(tag, attrs...)
+	}
+	attrs := []htmlAttr{{"class", "goword-sdt"}, {"data-sdt-type", v.SDTType}}
+	if v.Alias != "" {
+		attrs = append(attrs, htmlAttr{"data-alias", v.Alias})
+	}
+	if v.Tag != "" {
+		attrs = append(attrs, htmlAttr{"data-tag", v.Tag})
+	}
+	if v.DateFormat != "" {
+		attrs = append(attrs, htmlAttr{"data-date-format", v.DateFormat})
+	}
+	if len(v.ListItems) > 0 {
+		options := make([]string, 0, len(v.ListItems))
+		for _, item := range v.ListItems {
+			options = append(options, item.Value+":"+item.DisplayText)
+		}
+		attrs = append(attrs, htmlAttr{"data-options", strings.Join(options, "|")})
+	}
+	if v.ShowingPlcHdr {
+		attrs = append(attrs, htmlAttr{"data-placeholder", v.Value})
+	}
+	if v.IsBlock {
+		r.open("div", attrs...)
+	} else {
+		r.open("span", attrs...)
+	}
+	if v.SDTType == element.SDTTypeCheckbox {
+		checkboxAttrs := []htmlAttr{{"type", "checkbox"}, {"disabled", "disabled"}}
+		if v.Checked {
+			checkboxAttrs = append(checkboxAttrs, htmlAttr{"checked", "checked"})
+		}
+		r.void("input", checkboxAttrs...)
+	}
+	if len(v.Elements()) > 0 {
+		if v.IsBlock {
+			r.renderElements(v.Elements())
+		} else {
+			r.renderInlineElements(v.Elements())
+		}
+	} else if v.Value != "" {
+		r.text(v.Value)
+	} else if v.Placeholder != "" {
+		r.text(v.Placeholder)
+	} else {
+		r.unsupportedWith(v, "content control has no visible content", v.DocPart, v.ElementID)
+	}
+	if v.IsBlock {
+		r.close("div")
+	} else {
+		r.close("span")
+	}
+	if markup {
+		tag := "ins"
+		if tc.ChangeType == "del" {
+			tag = "del"
+		}
+		r.close(tag)
 	}
 }
 
@@ -597,7 +940,7 @@ func (r *htmlRenderer) renderList(elements []element.Element, start, depth int) 
 		r.openStyled("li", css)
 		switch v := elements[i].(type) {
 		case *element.ListItem:
-			r.renderText(v.Text, v.FontStyle)
+			r.renderRevisionText(v.Text, v.GetTrackChange(), v.FontStyle)
 		case *element.ListItemRun:
 			r.renderInlineElements(v.Elements())
 		}
@@ -839,14 +1182,84 @@ func (r *htmlRenderer) imageSource(img *element.Image) (string, error) {
 }
 
 func (r *htmlRenderer) unsupported(el element.Element, msg string) {
+	r.unsupportedWith(el, msg, "", "")
+}
+
+func (r *htmlRenderer) unsupportedWith(el element.Element, msg, part, path string) {
 	typ := "unknown"
 	if el != nil {
 		typ = el.Type()
 	}
-	r.diagnostics = append(r.diagnostics, HTMLDiagnostic{ElementType: typ, Message: msg})
+	id := ""
+	if el != nil {
+		switch v := el.(type) {
+		case *element.Field:
+			if part == "" {
+				part = v.DocPart
+			}
+			if part == "" {
+				part = "word/document.xml"
+			}
+			if path == "" {
+				path = v.ElementID
+			}
+			id = v.ElementID
+		case *element.SDT:
+			if part == "" {
+				part = v.DocPart
+			}
+			if part == "" {
+				part = "word/document.xml"
+			}
+			if path == "" {
+				path = v.ElementID
+			}
+			id = v.ElementID
+		}
+	}
+	r.recordDiagnosticFields(typ, msg, part, path, id)
 	r.open("span", htmlAttr{"class", "goword-unsupported"}, htmlAttr{"data-element", typ})
 	r.text("[Unsupported: " + typ + "]")
 	r.close("span")
+}
+
+func (r *htmlRenderer) recordDiagnostic(el element.Element, msg, part, path string) {
+	typ, id := "unknown", ""
+	if el != nil {
+		typ = el.Type()
+		switch v := el.(type) {
+		case *element.NoteReference:
+			id = v.ElementID
+		case *element.CommentReference:
+			id = v.ElementID
+		case *element.Field:
+			id = v.ElementID
+			if part == "" {
+				part = v.DocPart
+			}
+			if path == "" {
+				path = v.ElementID
+			}
+		case *element.SDT:
+			id = v.ElementID
+			if part == "" {
+				part = v.DocPart
+			}
+			if path == "" {
+				path = v.ElementID
+			}
+		}
+	}
+	r.recordDiagnosticFields(typ, msg, part, path, id)
+}
+
+func (r *htmlRenderer) recordDiagnosticFields(typ, msg, part, path, id string) {
+	key := typ + "\x00" + msg + "\x00" + part + "\x00" + path + "\x00" + id
+	if r.diagnosticKeys[key] {
+		return
+	}
+	r.diagnosticKeys[key] = true
+	r.diagnostics = append(r.diagnostics, HTMLDiagnostic{ElementType: typ, Message: msg, Part: part, Path: path, ID: id})
 }
 func (r *htmlRenderer) open(name string, attrs ...htmlAttr) {
 	r.writeString("<")

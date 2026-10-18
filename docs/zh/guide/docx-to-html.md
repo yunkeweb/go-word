@@ -1,6 +1,6 @@
 # DOCX 转 HTML
 
-从 **v0.12.0** 起提供，**v0.12.1** 修复 DOCX 样式还原，**v0.12.2** 修复纸张布局与超链接外观，**v0.13.0** 提升了常见文档的版式保真度。使用 Go 标准库将已加载的文档或 DOCX 文件转换为 HTML 片段或完整页面，无需 Microsoft Word、LibreOffice、cgo 或外部转换进程。
+从 **v0.12.0** 起提供，**v0.12.1** 修复 DOCX 样式还原，**v0.12.2** 修复纸张布局与超链接外观，**v0.13.0** 提升了常见文档的版式保真度，**v0.14.0** 增强内容完整性。使用 Go 标准库将已加载的文档或 DOCX 文件转换为 HTML 片段或完整页面，无需 Microsoft Word、LibreOffice、cgo 或外部转换进程。
 
 ## 转换文件
 
@@ -41,6 +41,20 @@ func main() {
 如果内容应随业务页面容器宽度排版，使用 `HTMLOptions{}` 返回片段；如果需要不带纸张预览的完整页面，使用 `HTMLOptions{Standalone: true, IncludeCSS: false}`，再自行提供 CSS。两种方式均保留支持的文字和段落内联格式。
 
 DOCX 明确指定的链接颜色和下划线设置会直接应用到链接元素，包括自动颜色和取消下划线，避免被浏览器默认链接样式覆盖。
+
+## v0.14.0 内容完整性
+
+读取器会保留 Word 字段的缓存结果、脚注/尾注/批注引用、修订信息和结构化文档标签（SDT）。字段不会在 Go 中重新计算；没有缓存结果的字段会输出稳定占位符并产生诊断。
+
+使用 `RevisionMode` 选择修订显示方式：
+
+```go
+word.HTMLOptions{RevisionMode: word.HTMLRevisionFinal}    // 显示插入，隐藏删除
+word.HTMLOptions{RevisionMode: word.HTMLRevisionOriginal} // 显示删除内容
+word.HTMLOptions{RevisionMode: word.HTMLRevisionMarkup}   // 使用 <ins>/<del> 同时显示
+```
+
+脚注、尾注和批注会生成文档内跳转及返回链接；悬空引用保留可见编号但不会生成坏链接。SDT 以只读语义容器输出，保留类型、alias、tag、日期格式、下拉选项和当前值；复选框使用 disabled input，不会生成表单提交、脚本或事件处理器。
 
 ## v0.13.0 的保真度提升
 
@@ -90,6 +104,7 @@ func (d *Document) WriteHTML(w io.Writer, opts HTMLOptions) error
 | `ImageMode` | `HTMLImageDataURI` | 嵌入图片字节；`HTMLImageURL` 使用现有来源或目标 URL |
 | `ImageURL` | `nil` | 签名为 `func(*element.Image) (string, error)`，优先于 `ImageMode` |
 | `Strict` | `false` | 渲染器产生诊断时返回 `*HTMLUnsupportedError` |
+| `RevisionMode` | `HTMLRevisionFinal` | 选择最终稿、原稿或修订标记模式 |
 
 文档保持不变且回调结果确定时，重复渲染会产生相同字节。并发渲染期间不要修改文档或其资源。
 
@@ -166,7 +181,7 @@ if errors.As(err, &unsupported) {
 }
 ```
 
-`HTMLDiagnostic` 包含 `ElementType` 和 `Message`。`RenderHTMLWithDiagnostics` 在严格模式失败时仍保留诊断与已生成输出；返回字节的便捷 API 在此情况下只返回错误，不提供可用 HTML。
+`HTMLDiagnostic` 包含兼容的 `ElementType` 和 `Message`，并在可用时提供 `Part`、`Path`、`ID`。`RenderHTMLWithDiagnostics` 在严格模式失败时仍保留诊断与已生成输出；返回字节的便捷 API 在此情况下只返回错误，不提供可用 HTML。
 
 诊断只覆盖到达渲染器的元素，**不是完整 OOXML 保真审计**。读取器没有重建的内容无法在此阶段报告。ZIP、XML 和关系问题请另外使用[包诊断](./diagnostics)。
 
@@ -183,7 +198,11 @@ if errors.As(err, &unsupported) {
 | 节与分页 | 多节使用 `section` 和 `data-break-type`；显式分页使用 `goword-page-break`。分节元数据不等于 Word 分页引擎 |
 | 页眉页脚 | 可选输出带 `data-type`（`default`、`first`、`even`）的分节容器。简单单节默认页眉页脚在打印中使用固定 CSS 重复；复杂按页选择场景保留显式 DOM，不自动模拟。导入页眉页脚图形的能力有限 |
 | 图片 | 可用 drawing 图片及尺寸/替代文本；缺失的嵌入引用保留供诊断。外链 drawing 和 VML 支持不完整 |
-| 脚注、批注、形状、公式 | DOM 容器可输出文字；导入引用关联、几何及公式排版不完整。保留的未支持元素输出占位符 |
+| 字段 | 读取并渲染 DOCX 中保存的缓存结果；动态字段不计算，缺少缓存时诊断并输出占位符 |
+| 脚注、尾注、批注 | 引用、正文容器和返回链接可导航；悬空引用保留编号并诊断，复杂批注界面不模拟 |
+| 修订 | 最终稿、原稿和 markup 三种模式；显示模式使用 `<ins>` / `<del>`，不复现 Word 逐字修订界面 |
+| 内容控件（SDT） | 只读输出类型、alias、tag、当前值及部分元数据；未知类型保留可见文本并诊断，不生成可提交表单 |
+| 形状、公式 | DOM 容器可输出文字；几何及公式排版不完整，保留的未支持元素输出占位符 |
 
 转换目标是可读的 HTML，不保证与 Word 页面逐像素一致。严格模式成功也不代表无损转换；接入新类别文档前，请先验证有代表性的样本。
 

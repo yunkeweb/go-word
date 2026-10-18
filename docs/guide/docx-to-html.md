@@ -1,6 +1,6 @@
 # DOCX to HTML
 
-Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, and fidelity improvements in **v0.13.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
+Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, fidelity improvements in **v0.13.0**, and content integrity improvements in **v0.14.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
 ## Convert a file
 
@@ -54,6 +54,20 @@ The v0.13.0 renderer preserves more layout metadata while keeping the existing f
 
 These additions improve readable screen output and browser printing, but they do not promise pixel-identical Word pagination. Validate representative documents with the target browser and print settings.
 
+## v0.14.0 content fidelity
+
+The reader preserves cached Word fields, note and comment references, tracked revisions, and structured document tags (content controls). Cached field results are rendered as text; GoWord does not calculate dynamic fields. A field without a cached result emits a diagnostic and renders a stable placeholder.
+
+Use `RevisionMode` to select the visible revision set:
+
+```go
+word.HTMLOptions{RevisionMode: word.HTMLRevisionFinal}    // insertions visible, deletions hidden
+word.HTMLOptions{RevisionMode: word.HTMLRevisionOriginal} // deletions visible
+word.HTMLOptions{RevisionMode: word.HTMLRevisionMarkup}   // both, wrapped in <ins>/<del>
+```
+
+Footnote, endnote, and comment references become in-document links with return links; dangling references keep their visible number without a broken link. Content controls are read-only HTML and retain their type, alias, tag, date format, list options, and visible value. Checkboxes use disabled inputs. No form submission, script, or event handler is generated.
+
 ## API reference
 
 These signatures belong to package `word`; `io.Reader` and `io.Writer` are standard-library interfaces.
@@ -90,6 +104,7 @@ For in-memory DOCX bytes, use `RenderHTML(bytes.NewReader(raw), opts)`, or load 
 | `ImageMode` | `HTMLImageDataURI` | Embeds image bytes; `HTMLImageURL` uses existing source/target URLs |
 | `ImageURL` | `nil` | Callback with signature `func(*element.Image) (string, error)`; overrides `ImageMode` |
 | `Strict` | `false` | Returns `*HTMLUnsupportedError` when the renderer records diagnostics |
+| `RevisionMode` | `HTMLRevisionFinal` | Selects final, original, or markup rendering for tracked changes |
 
 Repeated rendering of an unchanged document produces the same bytes when callbacks are deterministic. Keep documents and their resources immutable while rendering concurrently.
 
@@ -166,7 +181,7 @@ if errors.As(err, &unsupported) {
 }
 ```
 
-`HTMLDiagnostic` contains `ElementType` and `Message`. `RenderHTMLWithDiagnostics` retains diagnostic information and generated output on a strict-mode error. The byte-returning convenience APIs return an error without usable HTML in that case.
+`HTMLDiagnostic` contains the compatible `ElementType` and `Message` fields plus `Part`, `Path`, and `ID` when the source element provides them. `RenderHTMLWithDiagnostics` retains diagnostic information and generated output on a strict-mode error. Diagnostics describe elements that reached the renderer; content omitted by the reader cannot be diagnosed after loading.
 
 Diagnostics cover elements that reach the renderer. They are **not a complete OOXML fidelity audit**: content the reader does not reconstruct cannot be reported by this stage. Use [package diagnostics](./diagnostics) separately for package/XML/relationship issues.
 
@@ -183,7 +198,11 @@ The style restoration described below requires v0.12.1 or later; paper layout an
 | Sections and page breaks | Multiple sections use `section` and `data-break-type`; explicit page breaks use `goword-page-break`. Section break metadata does not implement Word pagination |
 | Headers and footers | Optional section containers with `data-type` (`default`, `first`, `even`). A simple single-section default pair is repeated in print with fixed CSS; complex page-dependent selection is retained as explicit DOM and is not automatically simulated. Imported header/footer graphics remain limited |
 | Images | Available drawing images with size/alt metadata; missing embedded references are retained for diagnostics. External linked drawings and VML are not fully supported |
-| Notes, comments, shapes, formulas | DOM containers can expose text; imported references, geometry and equation layout are incomplete. Unsupported retained elements produce placeholders |
+| Fields | Reads and renders cached DOCX results; dynamic fields are not calculated, and missing caches emit a diagnostic and placeholder |
+| Footnotes, endnotes, comments | References, body content, and return links are navigable; dangling references retain their number and emit diagnostics. Word's comment UI is not reproduced |
+| Tracked revisions | Final, original, and markup modes; markup uses `<ins>` / `<del>` and does not reproduce Word's full review interface |
+| Content controls (SDT) | Read-only output retains type, alias, tag, visible value, and selected metadata; unknown types retain visible text with a diagnostic and never create a submittable form |
+| Shapes, formulas | DOM containers can expose text; geometry and equation layout remain incomplete. Unsupported retained elements produce placeholders |
 
 Conversion aims at readable HTML, not pixel-identical Word pages. A successful strict conversion does not guarantee lossless conversion. Review representative documents before adopting it for a new document family.
 

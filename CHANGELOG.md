@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.14.0 — 2026-10-18
+
+### DOCX to HTML content integrity
+- Preserve cached field results and diagnose fields without cached values or malformed field structure.
+- Resolve footnote, endnote, and comment references with stable return links, visible dangling-reference markers, and unique HTML IDs.
+- Add final, original, and markup rendering modes for tracked revisions.
+- Read and render structured document tags as safe, read-only HTML, including rich-text run formatting, dates, lists, placeholders, and disabled checkboxes.
+- Add content-integrity regression fixtures and source-aware conversion diagnostics while retaining pure-Go, no-cgo operation.
+- 增强 DOCX 转 HTML 内容完整性：保留字段缓存结果，诊断缺失缓存和结构异常；解析脚注、尾注、批注引用并生成稳定返回链接；支持最终稿、原稿和修订标记模式；安全只读渲染 SDT 内容控件及富文本 run 格式、日期、下拉选项、占位符和禁用复选框。
+
 ## v0.13.0 — 2026-10-03
 
 ### DOCX to HTML fidelity / DOCX 转 HTML 保真度
