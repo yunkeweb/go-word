@@ -176,6 +176,7 @@ func cloneChart(ch *Chart) *Chart {
 	for i := range c.Series {
 		c.Series[i].Categories = append([]string(nil), ch.Series[i].Categories...)
 		c.Series[i].Values = append([]float64(nil), ch.Series[i].Values...)
+		c.Series[i].MissingValues = append([]bool(nil), ch.Series[i].MissingValues...)
 	}
 	c.Style.Colors = append([]string(nil), ch.Style.Colors...)
 	return &c

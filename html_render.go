@@ -388,9 +388,13 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 		r.renderText(v.Content, v.FontStyle)
 		r.close("p")
 	case *element.TextRun:
-		r.openStyled("p", paragraphTextStyle(v.ParagraphStyle, v.Elements()))
-		r.renderInlineElements(v.Elements())
-		r.close("p")
+		if hasBlockInline(v.Elements()) {
+			r.renderMixedTextRun(v)
+		} else {
+			r.openStyled("p", paragraphTextStyle(v.ParagraphStyle, v.Elements()))
+			r.renderInlineElements(v.Elements())
+			r.close("p")
+		}
 	case *element.ListItem:
 		r.open("p")
 		r.renderRevisionText(v.Text, v.GetTrackChange(), v.FontStyle)
@@ -465,13 +469,44 @@ func (r *htmlRenderer) renderBlock(el element.Element) {
 		r.renderElements(v.Elements())
 		r.close("aside")
 	case *element.TextBox:
-		r.open("div", htmlAttr{"class", "goword-textbox"})
+		attrs := []htmlAttr{{"class", "goword-textbox"}}
+		if v.BoxStyle.Width > 0 {
+			attrs = append(attrs, htmlAttr{"data-width", strconv.Itoa(v.BoxStyle.Width)})
+		}
+		if v.BoxStyle.Height > 0 {
+			attrs = append(attrs, htmlAttr{"data-height", strconv.Itoa(v.BoxStyle.Height)})
+		}
+		if css := textBoxStyle(v.BoxStyle); css != "" {
+			attrs = append(attrs, htmlAttr{"style", css})
+		}
+		r.open("div", attrs...)
 		r.renderElements(v.Elements())
 		r.close("div")
 	case *element.DMLShape:
-		r.open("div", htmlAttr{"class", "goword-shape"})
+		if v.Diagnostic != "" {
+			r.recordDiagnostic(v, v.Diagnostic, "word/document.xml", v.ElementID)
+		}
+		attrs := []htmlAttr{{"class", "goword-shape"}, {"data-shape", v.PrstGeom}}
+		if v.Width > 0 {
+			attrs = append(attrs, htmlAttr{"data-width", strconv.Itoa(v.Width)})
+		}
+		if v.Height > 0 {
+			attrs = append(attrs, htmlAttr{"data-height", strconv.Itoa(v.Height)})
+		}
+		if v.FillColor != "" {
+			attrs = append(attrs, htmlAttr{"data-fill", v.FillColor})
+		}
+		if v.LineColor != "" {
+			attrs = append(attrs, htmlAttr{"data-line", v.LineColor})
+		}
+		if css := shapeStyle(v); css != "" {
+			attrs = append(attrs, htmlAttr{"style", css})
+		}
+		r.open("div", attrs...)
 		r.renderElements(v.Elements())
 		r.close("div")
+	case *element.Chart:
+		r.renderChart(v)
 	case *element.Formula:
 		if v.Source != "" {
 			r.open("span", htmlAttr{"class", "goword-formula"})
@@ -523,8 +558,197 @@ func (r *htmlRenderer) renderInlineElements(elements []element.Element) {
 			r.renderCommentReference(v)
 		case *element.SDT:
 			r.renderSDT(v)
+		case *element.TextBox:
+			r.renderTextBoxInline(v)
+		case *element.DMLShape:
+			r.renderShapeInline(v)
+		case *element.Chart:
+			r.renderChart(v)
 		default:
 			r.unsupported(el, "inline element is not mapped to HTML")
+		}
+	}
+}
+
+func hasBlockInline(elements []element.Element) bool {
+	for _, el := range elements {
+		if _, ok := el.(*element.Chart); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *htmlRenderer) renderMixedTextRun(run *element.TextRun) {
+	open := false
+	for _, el := range run.Elements() {
+		if _, ok := el.(*element.Chart); ok {
+			if open {
+				r.close("p")
+				open = false
+			}
+			r.renderChart(el.(*element.Chart))
+			continue
+		}
+		if !open {
+			r.openStyled("p", paragraphTextStyle(run.ParagraphStyle, run.Elements()))
+			open = true
+		}
+		r.renderInlineElements([]element.Element{el})
+	}
+	if open {
+		r.close("p")
+	}
+}
+
+func (r *htmlRenderer) renderChart(chart *element.Chart) {
+	if chart == nil {
+		return
+	}
+	series := chart.Series
+	if len(series) == 0 && (len(chart.Categories) > 0 || len(chart.Values) > 0) {
+		series = []element.ChartSeries{{Name: chart.SeriesName, Categories: chart.Categories, Values: chart.Values}}
+	}
+	attrs := []htmlAttr{{"class", "goword-chart"}}
+	if chart.ChartType != "" {
+		attrs = append(attrs, htmlAttr{"data-chart-type", chart.ChartType})
+	}
+	r.open("figure", attrs...)
+	if chart.Style.Title != "" {
+		r.tagText("figcaption", chart.Style.Title)
+	}
+	for _, item := range series {
+		for _, missing := range item.MissingValues {
+			if missing {
+				r.recordDiagnostic(chart, "chart cache contains missing values", chart.DocPart, "")
+				break
+			}
+		}
+	}
+	if len(series) == 0 {
+		r.recordDiagnostic(chart, "chart has no cached series data", "word/charts", chart.ElementID)
+		r.open("p", htmlAttr{"class", "goword-chart-fallback"})
+		r.text("Chart data is unavailable.")
+		r.close("p")
+		r.close("figure")
+		return
+	}
+	r.open("table", htmlAttr{"class", "goword-chart-data"})
+	r.open("thead")
+	r.open("tr")
+	r.tagTextAttrs("th", []htmlAttr{{"scope", "col"}}, "Category")
+	for i, item := range series {
+		name := strings.TrimSpace(item.Name)
+		if name == "" && i == 0 {
+			name = strings.TrimSpace(chart.SeriesName)
+		}
+		if name == "" {
+			name = "Series " + strconv.Itoa(i+1)
+		}
+		attrs := []htmlAttr{{"scope", "col"}}
+		if item.SecondaryAxis {
+			attrs = append(attrs, htmlAttr{"data-secondary-axis", "true"})
+		}
+		r.tagTextAttrs("th", attrs, name)
+	}
+	r.close("tr")
+	r.close("thead")
+	r.open("tbody")
+	rowCount := len(chart.Categories)
+	for _, item := range series {
+		if len(item.Categories) > rowCount {
+			rowCount = len(item.Categories)
+		}
+		if len(item.Values) > rowCount {
+			rowCount = len(item.Values)
+		}
+	}
+	for row := 0; row < rowCount; row++ {
+		category := ""
+		if row < len(chart.Categories) {
+			category = chart.Categories[row]
+		}
+		if category == "" {
+			for _, item := range series {
+				if row < len(item.Categories) && item.Categories[row] != "" {
+					category = item.Categories[row]
+					break
+				}
+			}
+		}
+		if category == "" {
+			category = "Category " + strconv.Itoa(row+1)
+		}
+		r.open("tr")
+		r.tagTextAttrs("th", []htmlAttr{{"scope", "row"}}, category)
+		for _, item := range series {
+			if row < len(item.Values) {
+				value := strconv.FormatFloat(item.Values[row], 'f', -1, 64)
+				if row < len(item.MissingValues) && item.MissingValues[row] {
+					value = ""
+				}
+				r.tagText("td", value)
+			} else {
+				r.tagText("td", "")
+			}
+		}
+		r.close("tr")
+	}
+	r.close("tbody")
+	r.close("table")
+	r.close("figure")
+}
+
+func (r *htmlRenderer) renderTextBoxInline(v *element.TextBox) {
+	attrs := []htmlAttr{{"class", "goword-textbox"}}
+	if v.BoxStyle.Width > 0 {
+		attrs = append(attrs, htmlAttr{"data-width", strconv.Itoa(v.BoxStyle.Width)})
+	}
+	if v.BoxStyle.Height > 0 {
+		attrs = append(attrs, htmlAttr{"data-height", strconv.Itoa(v.BoxStyle.Height)})
+	}
+	if css := textBoxStyle(v.BoxStyle); css != "" {
+		attrs = append(attrs, htmlAttr{"style", css})
+	}
+	r.open("span", attrs...)
+	r.renderInlineContainer(v.Elements())
+	r.close("span")
+}
+
+func (r *htmlRenderer) renderShapeInline(v *element.DMLShape) {
+	if v.Diagnostic != "" {
+		r.recordDiagnostic(v, v.Diagnostic, "word/document.xml", v.ElementID)
+	}
+	attrs := []htmlAttr{{"class", "goword-shape"}, {"data-shape", v.PrstGeom}}
+	if v.Width > 0 {
+		attrs = append(attrs, htmlAttr{"data-width", strconv.Itoa(v.Width)})
+	}
+	if v.Height > 0 {
+		attrs = append(attrs, htmlAttr{"data-height", strconv.Itoa(v.Height)})
+	}
+	if v.FillColor != "" {
+		attrs = append(attrs, htmlAttr{"data-fill", v.FillColor})
+	}
+	if v.LineColor != "" {
+		attrs = append(attrs, htmlAttr{"data-line", v.LineColor})
+	}
+	if css := shapeStyle(v); css != "" {
+		attrs = append(attrs, htmlAttr{"style", css})
+	}
+	r.open("span", attrs...)
+	r.renderInlineContainer(v.Elements())
+	r.close("span")
+}
+
+func (r *htmlRenderer) renderInlineContainer(elements []element.Element) {
+	for _, el := range elements {
+		switch v := el.(type) {
+		case *element.Text:
+			r.renderRevisionText(v.Content, v.GetTrackChange(), v.FontStyle)
+		case *element.TextRun:
+			r.renderInlineElements(v.Elements())
+		default:
+			r.renderInlineElements([]element.Element{v})
 		}
 	}
 }
@@ -1160,7 +1384,7 @@ func (r *htmlRenderer) imageSource(img *element.Image) (string, error) {
 	if len(data) == 0 {
 		data = img.Media.Data
 	}
-	if len(data) == 0 && img.Source != "" {
+	if len(data) == 0 && img.Source != "" && !isExternalURL(img.Source) {
 		var err error
 		data, err = common.ReadFile(img.Source)
 		if err != nil {
@@ -1179,6 +1403,70 @@ func (r *htmlRenderer) imageSource(img *element.Image) (string, error) {
 		mime = "application/octet-stream"
 	}
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+func isExternalURL(s string) bool {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || strings.HasPrefix(lower, "//")
+}
+
+func textBoxStyle(st style.TextBox) string {
+	var out []string
+	if st.Width > 0 {
+		out = append(out, "width:"+strconv.Itoa(st.Width)+"px")
+	}
+	if st.Height > 0 {
+		out = append(out, "height:"+strconv.Itoa(st.Height)+"px")
+	}
+	if c := cssColor(st.BgColor); c != "" {
+		out = append(out, "background-color:"+c)
+	}
+	if c := cssColor(st.BorderColor); c != "" {
+		width := st.BorderSize
+		if width <= 0 {
+			width = 1
+		}
+		out = append(out, "border:"+strconv.Itoa(width)+"px solid "+c)
+	}
+	return strings.Join(out, ";")
+}
+
+func shapeStyle(s *element.DMLShape) string {
+	if s == nil {
+		return ""
+	}
+	var out []string
+	if w := shapeDimension(s.Width); w > 0 {
+		out = append(out, "width:"+strconv.Itoa(w)+"px")
+	}
+	if h := shapeDimension(s.Height); h > 0 {
+		out = append(out, "height:"+strconv.Itoa(h)+"px")
+	}
+	if c := cssColor(s.FillColor); c != "" {
+		out = append(out, "background-color:"+c)
+	}
+	if c := cssColor(s.LineColor); c != "" {
+		width := s.LineWidth
+		if width <= 0 {
+			width = 1
+		}
+		line := formatFloat(float64(width)) + "px"
+		if width >= 1000 {
+			line = formatFloat(float64(width)/12700) + "pt"
+		}
+		out = append(out, "border:"+line+" solid "+c)
+	}
+	return strings.Join(out, ";")
+}
+
+func shapeDimension(v int) int {
+	if v <= 0 {
+		return 0
+	}
+	if v > 100000 {
+		return int(common.EMUToPixel(int64(v)))
+	}
+	return v
 }
 
 func (r *htmlRenderer) unsupported(el element.Element, msg string) {
@@ -1202,6 +1490,11 @@ func (r *htmlRenderer) unsupportedWith(el element.Element, msg, part, path strin
 			}
 			if path == "" {
 				path = v.ElementID
+			}
+		case *element.Chart:
+			id = v.ElementID
+			if part == "" {
+				part = v.DocPart
 			}
 			id = v.ElementID
 		case *element.SDT:
@@ -1248,6 +1541,14 @@ func (r *htmlRenderer) recordDiagnostic(el element.Element, msg, part, path stri
 			if path == "" {
 				path = v.ElementID
 			}
+		case *element.Chart:
+			id = v.ElementID
+			if part == "" {
+				part = v.DocPart
+			}
+			if path == "" {
+				path = v.ElementID
+			}
 		}
 	}
 	r.recordDiagnosticFields(typ, msg, part, path, id)
@@ -1283,6 +1584,11 @@ func (r *htmlRenderer) void(name string, attrs ...htmlAttr) {
 func (r *htmlRenderer) close(name string)      { r.writeString("</" + name + ">") }
 func (r *htmlRenderer) text(s string)          { r.writeString(html.EscapeString(s)) }
 func (r *htmlRenderer) tagText(name, s string) { r.open(name); r.text(s); r.close(name) }
+func (r *htmlRenderer) tagTextAttrs(name string, attrs []htmlAttr, s string) {
+	r.open(name, attrs...)
+	r.text(s)
+	r.close(name)
+}
 func (r *htmlRenderer) writeAttrs(attrs []htmlAttr) {
 	for _, a := range attrs {
 		if a.name == "" {

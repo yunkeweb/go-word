@@ -1442,7 +1442,17 @@ func (w *word2007Writer) writeDMLShape(xw *common.XMLWriter, sh *element.DMLShap
 	}
 	xw.Empty("wps:cNvSpPr", "txBox", txBox)
 	xw.Start("wps:spPr")
-	xw.Start("a:xfrm")
+	xfrm := []string{"x", "0", "y", "0"}
+	if sh.Rotation != 0 {
+		xfrm = append(xfrm, "rot", itoa(int(sh.Rotation*60000)))
+	}
+	if sh.FlipH {
+		xfrm = append(xfrm, "flipH", "1")
+	}
+	if sh.FlipV {
+		xfrm = append(xfrm, "flipV", "1")
+	}
+	xw.Start("a:xfrm", xfrm...)
 	xw.Empty("a:off", "x", "0", "y", "0")
 	xw.Empty("a:ext", "cx", itoa(cx), "cy", itoa(cy))
 	xw.End()

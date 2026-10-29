@@ -136,7 +136,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.13.0", 1)
+	sec.AddTitle("GoWord v0.15.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -147,7 +147,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.13.0
+go get github.com/yunkeweb/go-word@v0.15.0
 ```
 
 Continue with [Installation](/guide/installation), [Quick Start](/guide/getting-started), [SDT](/guide/sdt), [Tables](/guide/table), [Watermark & Protection](/guide/protect), and the four [Enterprise Recipes](/guide/recipes). Full signatures live on [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word).

@@ -419,14 +419,15 @@ func TestRenderHTMLStrictDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Diagnostics) != 1 || res.Diagnostics[0].ElementType != "Chart" {
+	if len(res.Diagnostics) != 0 {
 		t.Fatalf("diagnostics=%+v", res.Diagnostics)
 	}
-	if !strings.Contains(string(res.HTML), "data-element=\"Chart\"") {
-		t.Fatalf("fallback missing: %s", res.HTML)
+	if !strings.Contains(string(res.HTML), `<figure class="goword-chart"`) ||
+		!strings.Contains(string(res.HTML), `<table class="goword-chart-data"`) {
+		t.Fatalf("semantic chart output missing: %s", res.HTML)
 	}
-	if _, err := doc.RenderHTML(HTMLOptions{Strict: true}); err == nil {
-		t.Fatal("strict mode accepted unsupported chart")
+	if _, err := doc.RenderHTML(HTMLOptions{Strict: true}); err != nil {
+		t.Fatalf("strict mode rejected supported chart: %v", err)
 	}
 }
 

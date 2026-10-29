@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.15.0 — 2026-10-29
+
+### DOCX to HTML complex objects / DOCX 转 HTML 复杂对象
+
+- Render DrawingML shapes and text boxes as safe HTML/CSS containers with supported geometry, dimensions, fill, outline, rotation, flipping, and inner text.
+- Render charts as JavaScript-free semantic tables with captions, legends, series names, category/value caches, accessibility scopes, and combination-chart axis metadata.
+- Preserve missing chart caches and unknown DrawingML structures through source-aware diagnostics and readable fallback output.
+- Keep external image URLs opt-in; conversion does not download remote resources by default.
+- Add complex-object reader, renderer, and strict-mode regression coverage while retaining pure-Go, no-cgo operation.
+- 将 DrawingML 形状和文本框安全渲染为 HTML/CSS 容器，保留支持的几何、尺寸、填充、边框、旋转、翻转和内部文字。
+- 将图表渲染为不依赖 JavaScript 的语义化表格，包含标题、图例、系列名、类别/数值缓存、无障碍 scope 及组合图坐标轴信息。
+- 通过带来源信息的诊断和可读降级保留缺失图表缓存及未知 DrawingML 结构；外链图片默认不下载。
+
 ## v0.14.0 — 2026-10-18
 
 ### DOCX to HTML content integrity

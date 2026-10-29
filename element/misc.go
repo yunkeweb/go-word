@@ -176,7 +176,8 @@ func (s *Shape) Type() string { return "Shape" }
 // TextBox is a floating text frame.
 type TextBox struct {
 	Container
-	BoxStyle style.TextBox
+	BoxStyle   style.TextBox
+	Diagnostic string
 }
 
 func (t *TextBox) Type() string { return "TextBox" }
@@ -190,12 +191,16 @@ func NewTextBox() *TextBox {
 // DMLShape is a DrawingML wordprocessing shape (wps:wsp).
 type DMLShape struct {
 	Container
-	PrstGeom  string
-	Width     int
-	Height    int
-	FillColor string
-	LineColor string
-	LineWidth int
+	PrstGeom   string
+	Width      int
+	Height     int
+	FillColor  string
+	LineColor  string
+	LineWidth  int
+	Rotation   float64 // degrees
+	FlipH      bool
+	FlipV      bool
+	Diagnostic string
 }
 
 func (s *DMLShape) Type() string { return "DMLShape" }
@@ -259,6 +264,7 @@ type ChartSeries struct {
 	SecondaryAxis bool
 	Smooth        bool
 	Marker        string
+	MissingValues []bool // true marks an absent/invalid cached value; zero remains a real value
 }
 
 // Chart is a chart drawing.
@@ -270,6 +276,7 @@ type Chart struct {
 	Style      style.Chart
 	SeriesName string
 	Series     []ChartSeries
+	Diagnostic string
 }
 
 func (c *Chart) Type() string { return "Chart" }

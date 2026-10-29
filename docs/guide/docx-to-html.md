@@ -1,6 +1,6 @@
 # DOCX to HTML
 
-Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, fidelity improvements in **v0.13.0**, and content integrity improvements in **v0.14.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
+Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, fidelity improvements in **v0.13.0**, content integrity improvements in **v0.14.0**, and complex-object output in **v0.15.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
 ## Convert a file
 
@@ -67,6 +67,14 @@ word.HTMLOptions{RevisionMode: word.HTMLRevisionMarkup}   // both, wrapped in <i
 ```
 
 Footnote, endnote, and comment references become in-document links with return links; dangling references keep their visible number without a broken link. Content controls are read-only HTML and retain their type, alias, tag, date format, list options, and visible value. Checkboxes use disabled inputs. No form submission, script, or event handler is generated.
+
+## v0.15.0 complex objects
+
+DrawingML shapes and text boxes are rendered as safe HTML/CSS containers. Supported geometry, size, fill, outline, rotation, flipping, and inner text are emitted as data attributes and inline styles where they can be represented reliably. Unknown geometry remains visible as a diagnostic instead of being silently treated as an image. This output is intended for readable layout; it does not reproduce Word's drawing canvas or pixel-level positioning.
+
+Charts are rendered without JavaScript as a `<figure class="goword-chart">` containing a semantic `<table class="goword-chart-data">`. The table includes a caption when present, legend and series names, category labels, values, and `scope` attributes for assistive technology. Combination charts retain their secondary-axis metadata. If a chart has no cached values, the reader preserves the series and emits a diagnostic while the renderer keeps a readable table fallback.
+
+External image URLs are not fetched during conversion. A caller must explicitly provide `ImageURL` to publish a safe URL; the existing scheme validation and diagnostics still apply. This keeps conversion deterministic and avoids unexpected network access.
 
 ## API reference
 
@@ -202,12 +210,22 @@ The style restoration described below requires v0.12.1 or later; paper layout an
 | Footnotes, endnotes, comments | References, body content, and return links are navigable; dangling references retain their number and emit diagnostics. Word's comment UI is not reproduced |
 | Tracked revisions | Final, original, and markup modes; markup uses `<ins>` / `<del>` and does not reproduce Word's full review interface |
 | Content controls (SDT) | Read-only output retains type, alias, tag, visible value, and selected metadata; unknown types retain visible text with a diagnostic and never create a submittable form |
-| Shapes, formulas | DOM containers can expose text; geometry and equation layout remain incomplete. Unsupported retained elements produce placeholders |
+| Shapes and text boxes | Supported DrawingML geometry, size, fill, outline, rotation, flipping, and inner text map to safe HTML/CSS containers; unknown geometry remains visible with diagnostics. Word's drawing canvas and pixel-level placement are not reproduced |
+| Charts | Cached chart series render as a JavaScript-free semantic table with title, legend, categories, values, and combo-axis metadata; missing caches produce diagnostics and readable fallback rows |
+| Formulas | DOM containers can expose text; equation layout remains incomplete. Unsupported retained elements produce placeholders |
 
 Conversion aims at readable HTML, not pixel-identical Word pages. A successful strict conversion does not guarantee lossless conversion. Review representative documents before adopting it for a new document family.
 
 <a id="upgrading-to-v0-12-0"></a>
 <a id="upgrading-to-v0-12-1"></a>
+
+## Upgrading to v0.15.0
+
+```sh
+go get github.com/yunkeweb/go-word@v0.15.0
+```
+
+v0.15.0 adds DrawingML shape/text-box HTML and semantic chart tables. Applications that compare HTML snapshots should update expected chart placeholders and shape markup. Chart output no longer reports an in-memory `Chart` as unsupported; strict mode only fails for actual diagnostics such as missing chart caches or unknown retained structures. External image URLs remain opt-in.
 
 ## Upgrading to v0.13.0
 

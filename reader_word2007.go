@@ -30,6 +30,14 @@ type documentImage struct {
 	Data   []byte
 }
 
+type drawingInfo struct {
+	rid, geom, fill, line, text, alt string
+	width, height, lineWidth         int64
+	rotation                         float64
+	flipH, flipV, textBox            bool
+	bold                             bool
+}
+
 func (word2007Reader) Load(filename string) (*Document, error) {
 	zr, err := common.OpenZipFile(filename)
 	if err != nil {
@@ -107,6 +115,7 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 		}
 	}
 	images := map[string]documentImage{}
+	charts := map[string]*element.Chart{}
 	for id, rel := range rels {
 		if !strings.HasSuffix(rel.Type, "/image") || strings.Contains(rel.Target, "://") {
 			continue
@@ -121,6 +130,21 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 		}
 		images[id] = documentImage{Name: path.Base(target), Target: target, Data: data}
 	}
+	for id, rel := range rels {
+		if !strings.HasSuffix(rel.Type, "/chart") || strings.Contains(rel.Target, "://") {
+			continue
+		}
+		target := path.Clean(path.Join("word", rel.Target))
+		data, e := zr.ReadFileWithLimit(target, opts.partLimit())
+		if e != nil {
+			if errors.Is(e, os.ErrNotExist) {
+				continue
+			}
+			return nil, e
+		}
+		charts[id] = parseChartPart(data)
+		charts[id].DocPart = target
+	}
 	sections, err := parseDocumentSections(raw)
 	if err != nil {
 		return nil, err
@@ -130,7 +154,7 @@ func loadWord2007(zr *common.ZipReader, opts ReadOptions) (*Document, error) {
 	}
 	for _, parsed := range sections {
 		sec := doc.AddSection(parsed.style)
-		if err := parseDocumentXMLRelsImagesWithStyles(parsed.body, sec, relationshipTargets(rels), listStyles, images, styles); err != nil {
+		if err := parseDocumentXMLRelsImagesWithStylesAndCharts(parsed.body, sec, relationshipTargets(rels), listStyles, images, charts, styles); err != nil {
 			return nil, err
 		}
 		if err := loadSectionParts(zr, opts, sec, parsed.sectPr, rels); err != nil {
@@ -831,6 +855,10 @@ func parseDocumentXMLRelsImages(data []byte, sec *element.Section, rels map[stri
 }
 
 func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem, images map[string]documentImage, styles *wordStyleSheet) error {
+	return parseDocumentXMLRelsImagesWithStylesAndCharts(data, sec, rels, listStyles, images, nil, styles)
+}
+
+func parseDocumentXMLRelsImagesWithStylesAndCharts(data []byte, sec *element.Section, rels map[string]string, listStyles map[int]map[int]style.ListItem, images map[string]documentImage, charts map[string]*element.Chart, styles *wordStyleSheet) error {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	var (
 		frames              []tblFrame
@@ -1239,9 +1267,10 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 					currentRun().AddTextBreak()
 				}
 			case "drawing":
-				rid, width, height, alt := parseDrawing(dec)
-				if img, ok := images[rid]; ok {
-					st := style.Image{WidthEMU: width, HeightEMU: height, AltText: alt}
+				info := parseDrawing(dec)
+				if img, ok := images[info.rid]; ok {
+					width, height := info.width, info.height
+					st := style.Image{WidthEMU: width, HeightEMU: height, AltText: info.alt}
 					if width > 0 {
 						st.Width = common.EMUToPixel(width)
 					}
@@ -1251,20 +1280,44 @@ func parseDocumentXMLRelsImagesWithStyles(data []byte, sec *element.Section, rel
 					out := currentRun().AddImageBytes(img.Name, img.Data, st)
 					out.Media.Target = img.Target
 					out.Media.Ext = strings.TrimPrefix(strings.ToLower(path.Ext(img.Name)), ".")
-				} else if rid != "" {
+				} else if ch, ok := charts[info.rid]; ok {
+					flushRun()
+					clone := cloneChartForReader(ch)
+					if clone.DocPart == "" {
+						clone.DocPart = "word/charts"
+					}
+					clone.ElementID = nextContentID("chart")
+					currentRun().AppendElement(clone)
+				} else if info.geom != "" || info.text != "" {
+					flushRun()
+					shape := &element.DMLShape{PrstGeom: info.geom, Width: int(info.width), Height: int(info.height), FillColor: info.fill, LineColor: info.line, LineWidth: int(info.lineWidth), Rotation: info.rotation, FlipH: info.flipH, FlipV: info.flipV}
+					if info.geom == "" {
+						shape.Diagnostic = "unknown DrawingML geometry"
+					}
+					if info.text != "" {
+						if info.bold {
+							shape.AddText(info.text, style.Font{Bold: true})
+						} else {
+							shape.AddText(info.text)
+						}
+					}
+					currentRun().AppendElement(shape)
+				} else if info.rid != "" {
 					// Keep the drawing in the DOM so HTML conversion can report the
 					// missing relationship or media part instead of dropping it.
-					st := style.Image{AltText: alt}
-					if width > 0 {
-						st.Width = common.EMUToPixel(width)
-						st.WidthEMU = width
+					st := style.Image{AltText: info.alt}
+					if info.width > 0 {
+						st.Width = common.EMUToPixel(info.width)
+						st.WidthEMU = info.width
 					}
-					if height > 0 {
-						st.Height = common.EMUToPixel(height)
-						st.HeightEMU = height
+					if info.height > 0 {
+						st.Height = common.EMUToPixel(info.height)
+						st.HeightEMU = info.height
 					}
-					out := currentRun().AddImageBytes("missing-"+rid, nil, st)
-					out.Media.Target = rid
+					out := currentRun().AddImageBytes("missing-"+info.rid, nil, st)
+					out.Media.Target = info.rid
+				} else {
+					currentRun().AppendElement(&element.DMLShape{Diagnostic: "unknown DrawingML object"})
 				}
 			case "sectPr":
 				if err := skip(dec, t); err != nil {
@@ -1311,34 +1364,239 @@ func isTextElement(el element.Element) bool {
 	return ok
 }
 
-func parseDrawing(dec *xml.Decoder) (rid string, width, height int64, alt string) {
+func parseDrawing(dec *xml.Decoder) drawingInfo {
+	var out drawingInfo
 	depth := 1
 	for depth > 0 {
 		tok, err := dec.Token()
 		if err != nil {
-			return rid, width, height, alt
+			return out
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
 			depth++
 			switch localName(t.Name) {
+			case "chart":
+				if out.rid == "" {
+					out.rid = attr(t, "id")
+				}
 			case "blip":
-				if rid == "" {
-					rid = attr(t, "embed")
+				if out.rid == "" {
+					out.rid = attr(t, "embed")
 				}
 			case "extent":
-				if width == 0 {
-					width = atoi64(attr(t, "cx"))
-					height = atoi64(attr(t, "cy"))
+				if out.width == 0 {
+					out.width = atoi64(attr(t, "cx"))
+					out.height = atoi64(attr(t, "cy"))
 				}
 			case "docPr":
-				alt = attr(t, "descr")
+				out.alt = attr(t, "descr")
+			case "prstGeom":
+				out.geom = attr(t, "prst")
+			case "solidFill":
+				if out.fill == "" {
+					out.fill = attr(t, "val")
+				}
+			case "srgbClr":
+				if out.fill == "" {
+					out.fill = attr(t, "val")
+				} else if out.line == "" {
+					out.line = attr(t, "val")
+				}
+			case "ln":
+				out.lineWidth = atoi64(attr(t, "w"))
+			case "wsp":
+				out.textBox = false
+			case "xfrm":
+				if v := atoi64(attr(t, "rot")); v != 0 {
+					out.rotation = float64(v) / 60000
+				}
+				out.flipH = attr(t, "flipH") == "1" || strings.EqualFold(attr(t, "flipH"), "true")
+				out.flipV = attr(t, "flipV") == "1" || strings.EqualFold(attr(t, "flipV"), "true")
+			case "t":
+				var s string
+				if err := dec.DecodeElement(&s, &t); err == nil {
+					out.text += s
+					depth--
+				}
+			case "b":
+				out.bold = true
 			}
 		case xml.EndElement:
 			depth--
 		}
 	}
-	return rid, width, height, alt
+	return out
+}
+
+func cloneChartForReader(ch *element.Chart) *element.Chart {
+	if ch == nil {
+		return &element.Chart{}
+	}
+	out := *ch
+	out.Categories = append([]string(nil), ch.Categories...)
+	out.Values = append([]float64(nil), ch.Values...)
+	out.Series = append([]element.ChartSeries(nil), ch.Series...)
+	for i := range out.Series {
+		out.Series[i].Categories = append([]string(nil), ch.Series[i].Categories...)
+		out.Series[i].Values = append([]float64(nil), ch.Series[i].Values...)
+	}
+	return &out
+}
+
+func parseChartPart(data []byte) *element.Chart {
+	ch := &element.Chart{}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	var current *element.ChartSeries
+	var inCat, inVal, inSeriesTitle, inChartTitle, inCatAxisTitle, inValAxisTitle bool
+	var currentChartKind string
+	var catIndex, valIndex int
+	var pointIndex int
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch localName(t.Name) {
+			case "barChart":
+				if ch.ChartType == "" {
+					ch.ChartType = "bar"
+				}
+				currentChartKind = "bar"
+			case "lineChart":
+				if ch.ChartType == "" {
+					ch.ChartType = "line"
+				}
+				currentChartKind = "line"
+			case "pieChart":
+				if ch.ChartType == "" {
+					ch.ChartType = "pie"
+				}
+				currentChartKind = "pie"
+			case "areaChart":
+				if ch.ChartType == "" {
+					ch.ChartType = "area"
+				}
+				currentChartKind = "area"
+			case "scatterChart":
+				if ch.ChartType == "" {
+					ch.ChartType = "scatter"
+				}
+				currentChartKind = "scatter"
+			case "ser":
+				current = &element.ChartSeries{}
+				ch.Series = append(ch.Series, *current)
+				current = &ch.Series[len(ch.Series)-1]
+				current.Kind = currentChartKind
+				if len(ch.Series) > 1 && currentChartKind != ch.ChartType {
+					current.SecondaryAxis = true
+				}
+			case "tx":
+				inSeriesTitle = current != nil
+				inChartTitle = current == nil && ch.Style.Title == ""
+			case "cat":
+				inCat = current != nil
+				catIndex = 0
+			case "val":
+				inVal = current != nil
+				valIndex = 0
+			case "catAx":
+				inCatAxisTitle = true
+			case "valAx":
+				inValAxisTitle = true
+			case "legend":
+				ch.Style.ShowLegend = true
+			case "legendPos":
+				ch.Style.LegendPosition = attr(t, "val")
+			case "catAxTitle":
+				inCatAxisTitle = true
+			case "valAxTitle":
+				inValAxisTitle = true
+			case "pt":
+				pointIndex = atoi(attr(t, "idx"))
+			case "crosses":
+				if current != nil && attr(t, "val") == "max" {
+					current.SecondaryAxis = true
+				}
+			case "t":
+				var s string
+				if dec.DecodeElement(&s, &t) == nil {
+					if inSeriesTitle && current != nil {
+						current.Name += s
+					}
+					if inChartTitle {
+						ch.Style.Title += s
+					}
+					if inCatAxisTitle {
+						ch.Style.CategoryAxisTitle += s
+					}
+					if inValAxisTitle {
+						ch.Style.ValueAxisTitle += s
+					}
+					if inCat && current != nil {
+						for len(current.Categories) <= pointIndex {
+							current.Categories = append(current.Categories, "")
+						}
+						current.Categories[pointIndex] = s
+					}
+				}
+			case "v":
+				var s string
+				if dec.DecodeElement(&s, &t) == nil && current != nil {
+					if inCat && current != nil {
+						for len(current.Categories) <= pointIndex {
+							current.Categories = append(current.Categories, "")
+						}
+						current.Categories[pointIndex] = strings.TrimSpace(s)
+					}
+					if inSeriesTitle && current != nil {
+						current.Name += strings.TrimSpace(s)
+					}
+					if inVal {
+						for len(current.Values) <= pointIndex {
+							current.Values = append(current.Values, 0)
+							current.MissingValues = append(current.MissingValues, true)
+						}
+						if n, e := strconv.ParseFloat(strings.TrimSpace(s), 64); e == nil {
+							current.Values[pointIndex] = n
+							current.MissingValues[pointIndex] = false
+						}
+					}
+				}
+			}
+		case xml.EndElement:
+			switch localName(t.Name) {
+			case "tx":
+				inSeriesTitle = false
+				inChartTitle = false
+			case "cat":
+				inCat = false
+			case "val":
+				inVal = false
+			case "catAxTitle":
+				inCatAxisTitle = false
+			case "valAxTitle":
+				inValAxisTitle = false
+			case "catAx":
+				inCatAxisTitle = false
+			case "valAx":
+				inValAxisTitle = false
+			case "ser":
+				current = nil
+			}
+		}
+	}
+	if len(ch.Series) > 0 {
+		ch.Categories = ch.Series[0].Categories
+		ch.Values = ch.Series[0].Values
+		ch.SeriesName = ch.Series[0].Name
+	}
+	_ = catIndex
+	_ = valIndex
+	_ = pointIndex
+	return ch
 }
 
 func parseRelationshipDetails(data []byte) map[string]documentRelationship {

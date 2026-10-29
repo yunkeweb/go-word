@@ -14,7 +14,7 @@ GoWord is a single Go module. The writer, reader, template engine, merger, and m
 ## New
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.13.0
+go get github.com/yunkeweb/go-word@v0.15.0
 ```
 
 The command records a versioned require in your module and downloads the source into the module cache.
@@ -22,10 +22,10 @@ The command records a versioned require in your module and downloads the source 
 ## Upgrade
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.13.0
+go get github.com/yunkeweb/go-word@v0.15.0
 ```
 
-Pin a tag in CI. Proxy indexes for this module live at [proxy.golang.org](https://proxy.golang.org/github.com/yunkeweb/go-word/@v/v0.13.0.info). Review the [v0.13.0 upgrade notes](./docx-to-html#upgrading-to-v0-13-0), particularly keyed `style.ListItem` / `style.Spacing` literals and the HTML fidelity limits.
+Pin a tag in CI. Proxy indexes for this module live at [proxy.golang.org](https://proxy.golang.org/github.com/yunkeweb/go-word/@v/v0.15.0.info). Review the [v0.15.0 upgrade notes](./docx-to-html#upgrading-to-v0-15-0), particularly the semantic chart output, shape/text-box markup, and HTML fidelity limits.
 
 ## Import
 

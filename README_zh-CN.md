@@ -32,18 +32,20 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.14.0
+go get github.com/yunkeweb/go-word@v0.15.0
 ```
 
 需要 **Go 1.21** 或更高版本。
 
-## v0.14.0：DOCX 转 HTML
+## v0.15.0：DOCX 转 HTML
 
 `RenderHTMLFile` 返回 HTML 字节，由调用方使用 `os.WriteFile` 保存；也可先加载文档，再用 `Document.WriteHTML` 直接写入目标。[DOCX 转 HTML 指南](https://go-word.yunkeweb.com/zh/guide/docx-to-html) 提供完整程序、全部七个入口、图片处理、诊断和 ZIP 读取限制说明。
 
 渲染器支持嵌套列表与编号、DOM 表格合并属性、书签、分节、可选页眉页脚、字段缓存、脚注/尾注/批注、修订和只读内容控件。转换目标是可读的 HTML，不保证 Word 分页或任意 DOCX 的完整保真；严格模式只检查保留的 DOM 元素，不覆盖读取阶段遗漏的内容。
 
 **v0.14.0 内容完整性：** 字段缓存结果会保留，悬空脚注/尾注/批注引用保留可见编号但不生成坏链接，`RevisionMode` 可选择最终稿、原稿或修订标记输出。结构化文档标签会保留可见值和元数据，不会生成表单提交或脚本行为。
+
+**v0.15.0 复杂对象：** DrawingML 形状和文本框会保留安全的几何、填充、边框、旋转、翻转及内部文字，并输出为 HTML/CSS 容器。图表输出为不依赖 JavaScript 的语义化表格，包含标题、图例、系列、类别、数值和组合图坐标轴信息。缺失图表缓存和未知 DrawingML 结构会通过诊断保留，并提供可读降级输出。外链图片默认不会下载。
 
 升级时请使用具名字段初始化 `style.ListItem` 和 `style.Spacing`，两者分别新增了 `Start` 和 `BeforeSet`/`AfterSet`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-13-0)和[更新日志](CHANGELOG.md)。
 
@@ -80,7 +82,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.14.0", 1)
+	sec.AddTitle("GoWord v0.15.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",
