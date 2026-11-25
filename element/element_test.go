@@ -241,6 +241,10 @@ func TestTableHelpers(t *testing.T) {
 	if tbl.CountColumns() < 3 {
 		t.Fatalf("cols=%d", tbl.CountColumns())
 	}
+	gridOnly := NewTable(style.Table{GridWidths: []int{1200, 2400}})
+	if gridOnly.CountColumns() != 2 {
+		t.Fatalf("declared grid columns=%d", gridOnly.CountColumns())
+	}
 	w := tbl.FindFirstDefinedCellWidths()
 	if len(w) != 1 || w[0] != 100 {
 		t.Fatalf("widths=%v", w)

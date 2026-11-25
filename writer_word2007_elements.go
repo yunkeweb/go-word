@@ -427,6 +427,9 @@ func tableGridWidths(tbl *element.Table) []int {
 	if n == 0 {
 		return nil
 	}
+	if len(tbl.Style.GridWidths) == n {
+		return append([]int(nil), tbl.Style.GridWidths...)
+	}
 	out := make([]int, n)
 	for _, row := range tbl.Rows {
 		col := 0
@@ -566,12 +569,22 @@ func (w *word2007Writer) writeTblPr(xw *common.XMLWriter, st style.Table) {
 	if st.Indent != 0 {
 		xw.Empty("w:tblInd", "w:w", itoa(st.Indent), "w:type", "dxa")
 	}
+	cellSpacing := st.CellSpacing
+	if cellSpacing == 0 {
+		cellSpacing = st.CellSpacingVal
+	}
+	if cellSpacing != 0 {
+		xw.Empty("w:tblCellSpacing", "w:w", itoa(cellSpacing), "w:type", "dxa")
+	}
 	w.writeBorders(xw, "w:tblBorders", st.Borders)
 	if st.Shading.Fill != "" {
 		w.writeShd(xw, st.Shading)
 	}
 	if st.Layout != "" {
 		xw.Empty("w:tblLayout", "w:type", st.Layout)
+	}
+	if st.BidiVisual {
+		xw.Empty("w:bidiVisual")
 	}
 	if st.CellMarginTop != 0 || st.CellMarginLeft != 0 || st.CellMarginRight != 0 || st.CellMarginBottom != 0 {
 		xw.Start("w:tblCellMar")
@@ -1717,8 +1730,27 @@ func (w *word2007Writer) writeRPr(xw *common.XMLWriter, f style.Font, styleName 
 	if styleName != "" {
 		xw.Empty("w:rStyle", "w:val", styleName)
 	}
-	if f.Name != "" {
-		xw.Empty("w:rFonts", "w:ascii", f.Name, "w:hAnsi", f.Name, "w:eastAsia", f.Name, "w:cs", f.Name, "w:hint", f.Hint)
+	ascii, highANSI, eastAsia, complexScript := f.ASCII, f.HighANSI, f.EastAsia, f.ComplexScript
+	if ascii == "" {
+		ascii = f.Name
+	}
+	if highANSI == "" {
+		highANSI = f.Name
+	}
+	if eastAsia == "" {
+		eastAsia = f.Name
+	}
+	if complexScript == "" {
+		complexScript = f.Name
+	}
+	if ascii != "" || highANSI != "" || eastAsia != "" || complexScript != "" || f.Hint != "" {
+		attrs := []string{}
+		for _, pair := range [][2]string{{"w:ascii", ascii}, {"w:hAnsi", highANSI}, {"w:eastAsia", eastAsia}, {"w:cs", complexScript}, {"w:hint", f.Hint}} {
+			if pair[1] != "" {
+				attrs = append(attrs, pair[0], pair[1])
+			}
+		}
+		xw.Empty("w:rFonts", attrs...)
 	}
 	if f.Bold {
 		xw.Empty("w:b")
@@ -1777,8 +1809,18 @@ func (w *word2007Writer) writeRPr(xw *common.XMLWriter, f style.Font, styleName 
 	if f.RTL {
 		xw.Empty("w:rtl")
 	}
-	if f.Lang != "" {
-		xw.Empty("w:lang", "w:val", f.Lang)
+	if f.Lang != "" || f.EastAsiaLang != "" || f.ComplexScriptLang != "" {
+		attrs := []string{}
+		if f.Lang != "" {
+			attrs = append(attrs, "w:val", f.Lang)
+		}
+		if f.EastAsiaLang != "" {
+			attrs = append(attrs, "w:eastAsia", f.EastAsiaLang)
+		}
+		if f.ComplexScriptLang != "" {
+			attrs = append(attrs, "w:bidi", f.ComplexScriptLang)
+		}
+		xw.Empty("w:lang", attrs...)
 	}
 	xw.End()
 }

@@ -4,6 +4,7 @@ package style
 type Table struct {
 	Width            int    // twips
 	Unit             string // dxa, pct, auto, nil
+	GridWidths       []int  // tblGrid column widths in twips, when imported from DOCX
 	Alignment        string
 	CellMarginTop    int
 	CellMarginLeft   int
@@ -46,19 +47,19 @@ const (
 
 // Cell is a table cell property set.
 type Cell struct {
-	Width        int
-	Unit         string
-	VAlign       string
-	TextDir      string
-	GridSpan     int
-	VMerge       string // restart, continue
-	Shading      Shading
-	Borders      Borders
-	BgColor      string
-	NoWrap       bool
-	PaddingTop   int
-	PaddingLeft  int
-	PaddingRight int
+	Width         int
+	Unit          string
+	VAlign        string
+	TextDir       string
+	GridSpan      int
+	VMerge        string // restart, continue
+	Shading       Shading
+	Borders       Borders
+	BgColor       string
+	NoWrap        bool
+	PaddingTop    int
+	PaddingLeft   int
+	PaddingRight  int
 	PaddingBottom int
 }
 

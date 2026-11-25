@@ -44,6 +44,10 @@ const (
 // Font is a run property set (PHPWord Style\Font).
 type Font struct {
 	Name                string
+	ASCII               string // w:rFonts ascii face
+	HighANSI            string // w:rFonts hAnsi face
+	EastAsia            string // w:rFonts eastAsia face
+	ComplexScript       string // w:rFonts cs face
 	Hint                string // default, eastAsia, cs
 	Size                float64
 	Color               string
@@ -64,7 +68,9 @@ type Font struct {
 	Scale               int // percent
 	RTL                 bool
 	Lang                string
-	Position            int // half-points, signed
+	EastAsiaLang        string // w:lang eastAsia attribute
+	ComplexScriptLang   string // w:lang bidi attribute
+	Position            int    // half-points, signed
 	NoProof             bool
 	WhiteSpace          string
 	FallbackFont        string
@@ -73,12 +79,12 @@ type Font struct {
 
 // IsZero reports whether f has no run properties set.
 func (f Font) IsZero() bool {
-	return f.Name == "" && f.Size == 0 && f.Color == "" &&
+	return f.Name == "" && f.ASCII == "" && f.HighANSI == "" && f.EastAsia == "" && f.ComplexScript == "" && f.Size == 0 && f.Color == "" &&
 		!f.Bold && !f.Italic && (f.Underline == "" || f.Underline == UnderlineNone) &&
 		!f.SuperScript && !f.SubScript && !f.Strikethrough && !f.DoubleStrikethrough &&
 		!f.SmallCaps && !f.AllCaps && !f.Hidden && f.FgColor == "" && f.BgColor == "" &&
 		f.Spacing == 0 && f.Kerning == 0 && f.Scale == 0 && !f.RTL && f.Lang == "" &&
-		f.Position == 0 && !f.NoProof && f.Hint == ""
+		f.Position == 0 && !f.NoProof && f.Hint == "" && f.EastAsiaLang == "" && f.ComplexScriptLang == ""
 }
 
 // HalfPoints returns the font size in OOXML half-points, or 0 if unset.

@@ -141,3 +141,126 @@ func TestReaderTextBoxAndUnknownDrawing(t *testing.T) {
 		}
 	}
 }
+
+func TestReaderTableGridAndMergedCells(t *testing.T) {
+	body := `<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellSpacing w:w="40" w:type="dxa"/><w:tblCellMar><w:top w:w="120" w:type="dxa"/><w:left w:w="80" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8" w:color="112233"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr><w:tblHeader/><w:cantSplit/><w:trHeight w:val="360" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/><w:shd w:fill="FFEEDD"/><w:tcMar><w:bottom w:w="100" w:type="dxa"/></w:tcMar><w:tcBorders><w:left w:val="double" w:sz="12" w:color="445566"/></w:tcBorders></w:tcPr><w:p><w:r><w:t>merged root</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge/></w:tcPr><w:p/></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>left</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="500"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>right</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`
+	raw := contentDOCXFixture(t, body, "", nil)
+	doc, err := LoadBytes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []*element.Table
+	walkDocument(doc, func(el element.Element) {
+		if table, ok := el.(*element.Table); ok {
+			tables = append(tables, table)
+		}
+	})
+	if len(tables) != 2 {
+		t.Fatalf("got %d tables, want outer and nested tables", len(tables))
+	}
+	outer := tables[0]
+	if outer.Style.Width != 6000 || outer.Style.Unit != "dxa" || outer.Style.Layout != "fixed" {
+		t.Errorf("outer table properties not retained: %+v", outer.Style)
+	}
+	if outer.Style.CellMarginTop != 120 || outer.Style.CellMarginLeft != 80 || outer.Style.Borders.Top.Color != "112233" || outer.Style.CellSpacingVal != 40 {
+		t.Errorf("table margins/borders not retained: %+v", outer.Style)
+	}
+	if len(outer.Style.GridWidths) != 2 || outer.Style.GridWidths[0] != 2000 || outer.Style.GridWidths[1] != 4000 {
+		t.Errorf("table grid not retained: %v", outer.Style.GridWidths)
+	}
+	if len(outer.Rows) != 3 || len(outer.Rows[0].Cells) != 1 || outer.Rows[0].Cells[0].Style.GridSpan != 2 || outer.Rows[0].Cells[0].Style.VMerge != "restart" {
+		t.Fatalf("merged root not retained: %+v", outer.Rows)
+	}
+	if !outer.Rows[0].IsHeader() || !outer.Rows[0].IsCantSplit() || outer.Rows[0].Style.Height != 360 || outer.Rows[0].Style.Rule != "exact" {
+		t.Errorf("row properties not retained: %+v", outer.Rows[0].Style)
+	}
+	rootCell := outer.Rows[0].Cells[0].Style
+	if rootCell.Shading.Fill != "FFEEDD" || rootCell.PaddingTop != 0 || rootCell.PaddingBottom != 100 || rootCell.Borders.Left.Style != "double" || rootCell.Borders.Left.Color != "445566" {
+		t.Errorf("cell style not retained: %+v", rootCell)
+	}
+	if len(outer.Rows[1].Cells) != 1 || outer.Rows[1].Cells[0].Style.GridSpan != 2 || outer.Rows[1].Cells[0].Style.VMerge != "continue" {
+		t.Fatalf("empty vMerge must mean continue: %+v", outer.Rows[1].Cells)
+	}
+	doc = cycleDocument(t, doc)
+	tables = nil
+	walkDocument(doc, func(el element.Element) {
+		if table, ok := el.(*element.Table); ok {
+			tables = append(tables, table)
+		}
+	})
+	if len(tables) != 2 || len(tables[0].Style.GridWidths) != 2 || tables[0].Style.GridWidths[0] != 2000 || tables[0].Style.CellSpacingVal != 40 || tables[0].Rows[1].Cells[0].Style.VMerge != "continue" {
+		t.Fatalf("table grid/merge was not preserved across DOCX round trip: %+v", tables)
+	}
+	result, err := doc.RenderHTMLWithDiagnostics(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(result.HTML)
+	for _, want := range []string{`<table style="border-collapse:separate;width:400px;table-layout:fixed;border-spacing:2.6666666666666665px`, `<colgroup><col style="width:133.33333333333334px"><col style="width:266.6666666666667px"></colgroup>`, `colspan="2"`, `rowspan="2"`, "merged root", "nested", "left", "right", "border-top:1pt solid #112233", "padding-bottom:6.666666666666667px", "background-color:#FFEEDD", "border-left:1.5pt double #445566"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("HTML missing %q: %s", want, got)
+		}
+	}
+	assertHTMLStructure(t, got)
+}
+
+func TestReaderFontScriptGroupsAndLanguages(t *testing.T) {
+	body := `<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Liberation Sans" w:eastAsia="SimSun" w:cs="Noto Naskh Arabic" w:hint="eastAsia"/><w:lang w:val="en-US" w:eastAsia="zh-CN" w:bidi="ar-SA"/></w:rPr><w:t>mixed scripts</w:t></w:r></w:p>`
+	raw := contentDOCXFixture(t, body, "", nil)
+	doc, err := LoadBytes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readFont := func() style.Font {
+		var found style.Font
+		walkDocument(doc, func(el element.Element) {
+			if text, ok := el.(*element.Text); ok && text.Content == "mixed scripts" {
+				found, _ = text.FontStyle.(style.Font)
+			}
+		})
+		return found
+	}
+	want := style.Font{ASCII: "Arial", HighANSI: "Liberation Sans", EastAsia: "SimSun", ComplexScript: "Noto Naskh Arabic", Hint: "eastAsia", Lang: "en-US", EastAsiaLang: "zh-CN", ComplexScriptLang: "ar-SA"}
+	if got := readFont(); got.ASCII != want.ASCII || got.HighANSI != want.HighANSI || got.EastAsia != want.EastAsia || got.ComplexScript != want.ComplexScript || got.Hint != want.Hint || got.Lang != want.Lang || got.EastAsiaLang != want.EastAsiaLang || got.ComplexScriptLang != want.ComplexScriptLang {
+		t.Fatalf("script fonts/languages not retained: %+v", got)
+	}
+	doc = cycleDocument(t, doc)
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"SimSun", "Arial", "Liberation Sans", "Noto Naskh Arabic"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("HTML font fallback missing %q: %s", want, got)
+		}
+	}
+	font := readFont()
+	if font.ASCII != "Arial" || font.HighANSI != "Liberation Sans" || font.EastAsia != "SimSun" || font.ComplexScript != "Noto Naskh Arabic" || font.Lang != "en-US" || font.EastAsiaLang != "zh-CN" || font.ComplexScriptLang != "ar-SA" {
+		t.Fatalf("script fonts/languages changed across round trip: %+v", font)
+	}
+}
+
+func TestReaderTablePercentageWidth(t *testing.T) {
+	raw := contentDOCXFixture(t, `<w:tbl><w:tblPr><w:tblW w:w="2500" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2500"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>half width</w:t></w:r></w:p></w:tc></w:tr></w:tbl>`, "", nil)
+	doc, err := LoadBytes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table *element.Table
+	walkDocument(doc, func(el element.Element) {
+		if value, ok := el.(*element.Table); ok {
+			table = value
+		}
+	})
+	if table == nil || table.Style.Width != 2500 || table.Style.Unit != "pct" {
+		t.Fatalf("percentage width not retained: %+v", table)
+	}
+	doc = cycleDocument(t, doc)
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "width:50%") {
+		t.Fatalf("percentage width did not survive round trip: %s", got)
+	}
+}

@@ -32,12 +32,12 @@ Also included: tables with nested cells, headers/footers, images, lists, footnot
 ## Installation
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.15.0
+go get github.com/yunkeweb/go-word@v0.16.0
 ```
 
 Requires **Go 1.21+**.
 
-## DOCX to HTML in v0.15.0
+## DOCX to HTML in v0.16.0
 
 `RenderHTMLFile` returns HTML bytes. Save them with `os.WriteFile`, or load a document and use `Document.WriteHTML` for direct writer output. The [DOCX to HTML guide](https://go-word.yunkeweb.com/guide/docx-to-html) includes complete programs, all seven entry points, image handling, diagnostics, and ZIP read limits.
 
@@ -47,7 +47,9 @@ The renderer supports nested lists and numbering, DOM table merges, bookmarks, s
 
 **v0.15.0 complex objects:** DrawingML shapes and text boxes retain safe geometry, fill, outline, rotation, flipping, and inner text as HTML/CSS containers. Charts are rendered as JavaScript-free semantic tables with titles, legends, series, categories, values, and combo-axis metadata. Missing chart caches and unknown drawing structures remain visible through diagnostics and readable fallback output. External image URLs are not downloaded by default.
 
-When upgrading, use keyed `style.ListItem` and `style.Spacing` literals: these types add `Start` and `BeforeSet`/`AfterSet`, respectively. See the [upgrade notes](https://go-word.yunkeweb.com/guide/docx-to-html#upgrading-to-v0-13-0) and [changelog](CHANGELOG.md).
+**v0.16.0 table and typography fidelity:** DOCX table grids, dimensions, borders, spacing, cell formatting, and merge metadata are retained in the DOM and HTML; script-specific fonts and theme tint/shade colors are also preserved. Interrupted or inconsistent vertical merges keep affected cell content visible.
+
+When upgrading, use keyed style literals. `style.ListItem` and `style.Spacing` gained fields in v0.13.0; v0.16.0 adds fields to `style.Font` and `style.Table`, so existing unkeyed literals for those types need updates. See the [upgrade notes](https://go-word.yunkeweb.com/guide/docx-to-html#upgrading-to-v0-16-0) and [changelog](CHANGELOG.md).
 
 **v0.13.0 fixes:** With `Standalone: true` and `IncludeCSS: true`, HTML uses each section's paper size, orientation and margins to preserve the DOCX content width on screen and when printing. Explicit hyperlink colors and underline settings override browser defaults. Screen previews grow vertically; Word's automatic pagination is not reproduced. The DOCX style inheritance fixes from v0.12.1 remain included.
 
@@ -82,7 +84,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.15.0", 1)
+	sec.AddTitle("GoWord v0.16.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

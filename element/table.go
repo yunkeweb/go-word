@@ -57,7 +57,7 @@ func (t *Table) GetRows() []*Row { return t.Rows }
 
 // CountColumns returns the maximum number of columns, counting grid spans.
 func (t *Table) CountColumns() int {
-	max := 0
+	max := len(t.Style.GridWidths)
 	for _, r := range t.Rows {
 		n := 0
 		for _, c := range r.Cells {

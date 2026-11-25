@@ -1202,46 +1202,33 @@ func parseDocumentXMLRelsImagesWithStylesAndCharts(data []byte, sec *element.Sec
 				if n := len(frames); n > 0 && frames[n-1].row != nil {
 					frames[n-1].cell = frames[n-1].row.AddCell(0)
 				}
-			case "tcW":
-				if c := currentCell(); c != nil {
-					if w := atoi(attr(t, "w")); w > 0 {
-						c.Width = w
-						c.Style.Width = w
+			case "tblPr":
+				if n := len(frames); n > 0 && frames[n-1].tbl != nil {
+					var properties wordTableProperties
+					if err := decodeWordTableProperties(dec, t, &properties); err != nil {
+						return err
 					}
-					if u := attr(t, "type"); u != "" {
-						c.Style.Unit = u
-					}
+					properties.apply(frames[n-1].tbl, themeFromStyles(styles))
 				}
-			case "vAlign":
-				if c := currentCell(); c != nil {
-					if v := attr(t, "val"); v != "" {
-						c.Style.VAlign = v
-					}
-				}
-			case "textDirection":
-				if c := currentCell(); c != nil {
-					if v := attr(t, "val"); v != "" {
-						c.Style.TextDir = v
-					}
-				}
-			case "tblHeader":
-				if n := len(frames); n > 0 && frames[n-1].row != nil && onOffTrue(t) {
-					frames[n-1].row.Style.Header = true
-					frames[n-1].row.Style.TblHeader = true
-				}
-			case "cantSplit":
-				if n := len(frames); n > 0 && frames[n-1].row != nil && onOffTrue(t) {
-					frames[n-1].row.Style.CantSplit = true
-				}
-			case "trHeight":
+			case "trPr":
 				if n := len(frames); n > 0 && frames[n-1].row != nil {
-					row := frames[n-1].row
-					if h := atoi(attr(t, "val")); h > 0 {
-						row.Style.Height = h
+					var properties wordTableRowProperties
+					if err := decodeWordTableProperties(dec, t, &properties); err != nil {
+						return err
 					}
-					if rule := attr(t, "hRule"); rule != "" {
-						row.Style.Rule = rule
+					properties.apply(frames[n-1].row)
+				}
+			case "tcPr":
+				if c := currentCell(); c != nil {
+					var properties wordTableCellProperties
+					if err := decodeWordTableProperties(dec, t, &properties); err != nil {
+						return err
 					}
+					properties.apply(c, themeFromStyles(styles))
+				}
+			case "gridCol":
+				if n := len(frames); n > 0 && frames[n-1].tbl != nil {
+					frames[n-1].tbl.Style.GridWidths = append(frames[n-1].tbl.Style.GridWidths, atoi(attr(t, "w")))
 				}
 			case "t", "delText":
 				var s string

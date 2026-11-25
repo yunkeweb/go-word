@@ -1,6 +1,6 @@
 # DOCX to HTML
 
-Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, fidelity improvements in **v0.13.0**, content integrity improvements in **v0.14.0**, and complex-object output in **v0.15.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
+Available since **v0.12.0**, with DOCX style restoration fixes in **v0.12.1**, paper layout and hyperlink appearance fixes in **v0.12.2**, fidelity improvements in **v0.13.0**, content integrity improvements in **v0.14.0**, complex-object output in **v0.15.0**, and table/typography fidelity improvements in **v0.16.0**. Render a loaded document or a DOCX file as an HTML fragment or standalone page using the Go standard library. Microsoft Word, LibreOffice, cgo, and external conversion processes are not required.
 
 ## Convert a file
 
@@ -75,6 +75,12 @@ DrawingML shapes and text boxes are rendered as safe HTML/CSS containers. Suppor
 Charts are rendered without JavaScript as a `<figure class="goword-chart">` containing a semantic `<table class="goword-chart-data">`. The table includes a caption when present, legend and series names, category labels, values, and `scope` attributes for assistive technology. Combination charts retain their secondary-axis metadata. If a chart has no cached values, the reader preserves the series and emits a diagnostic while the renderer keeps a readable table fallback.
 
 External image URLs are not fetched during conversion. A caller must explicitly provide `ImageURL` to publish a safe URL; the existing scheme validation and diagnostics still apply. This keeps conversion deterministic and avoids unexpected network access.
+
+## v0.16.0 table and typography fidelity
+
+The current development version reads DOCX table grid widths, table and cell dimensions, fixed layout, borders, spacing, shading, row settings, cell padding, and merge metadata. HTML emits grid columns as a `<colgroup>` and retains supported table and cell widths, including percentage widths. `gridSpan` and valid `vMerge` groups become `colspan` and `rowspan`; when a vertical merge is interrupted or its spans disagree, the affected cells remain visible rather than losing their content.
+
+Run fonts retain separate ASCII, High ANSI, East Asian, and complex-script faces and language settings while keeping the existing `style.Font.Name` fallback. Theme colors, shading, and borders resolve `themeTint` and `themeShade` when the theme part is available. These changes improve the imported DOM and readable HTML output; they do not reproduce Word's full table layout or mixed-script font selection rules.
 
 ## API reference
 
@@ -218,6 +224,14 @@ Conversion aims at readable HTML, not pixel-identical Word pages. A successful s
 
 <a id="upgrading-to-v0-12-0"></a>
 <a id="upgrading-to-v0-12-1"></a>
+
+## Upgrading to v0.16.0
+
+```sh
+go get github.com/yunkeweb/go-word@v0.16.0
+```
+
+`style.Font` and `style.Table` add fields for script-specific fonts and table grid widths. Update unkeyed composite literals for these public structs to keyed literals. HTML snapshots may change because table grids now emit `<colgroup>`, table and cell percentage widths are preserved, and malformed vertical merges retain their cells instead of being collapsed. The renderer improves readable fidelity but does not reproduce Word's full pagination or table layout.
 
 ## Upgrading to v0.15.0
 

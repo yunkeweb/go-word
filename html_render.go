@@ -1020,6 +1020,17 @@ func (r *htmlRenderer) renderTable(t *element.Table) {
 		attrs = append(attrs, htmlAttr{"style", st})
 	}
 	r.open("table", attrs...)
+	if len(t.Style.GridWidths) > 0 {
+		r.open("colgroup")
+		for _, width := range t.Style.GridWidths {
+			colAttrs := []htmlAttr{}
+			if width > 0 {
+				colAttrs = append(colAttrs, htmlAttr{"style", "width:" + twipsPx(width)})
+			}
+			r.void("col", colAttrs...)
+		}
+		r.close("colgroup")
+	}
 	headerRows := 0
 	for headerRows < len(t.Rows) && t.Rows[headerRows] != nil && t.Rows[headerRows].IsHeader() {
 		headerRows++
@@ -1033,6 +1044,7 @@ func (r *htmlRenderer) renderTable(t *element.Table) {
 		if headerRows > 0 && i == headerRows {
 			r.close("thead")
 			r.open("tbody")
+			bodyTag = "tbody"
 		}
 		rowAttrs := []htmlAttr{}
 		if st := tableRowStyle(row.Style); st != "" {
@@ -1080,16 +1092,22 @@ func tableVerticalMerges(t *element.Table) (map[*element.Cell]int, map[*element.
 		for _, cell := range row.Cells {
 			if cell.Style.VMerge == "continue" {
 				if state := active[col]; state != nil {
-					if !state.counted {
-						rowspan[state.root]++
-						state.counted = true
+					span := cell.Style.GridSpan
+					if span < 1 {
+						span = 1
 					}
-					skip[cell] = true
-					for offset := 0; offset < state.span; offset++ {
-						next[col+offset] = state
+					if span == state.span {
+						if !state.counted {
+							rowspan[state.root]++
+							state.counted = true
+						}
+						skip[cell] = true
+						for offset := 0; offset < state.span; offset++ {
+							next[col+offset] = state
+						}
+						col += state.span
+						continue
 					}
-					col += state.span
-					continue
 				}
 			}
 			span := cell.Style.GridSpan
@@ -1604,13 +1622,14 @@ func fontStyle(v any) string {
 		return ""
 	}
 	var p []string
-	if f.Name != "" || f.FallbackFont != "" {
-		families := make([]string, 0, 2)
-		if f.Name != "" {
-			families = append(families, "\""+cssString(f.Name)+"\"")
-		}
-		if f.FallbackFont != "" {
-			families = append(families, "\""+cssString(f.FallbackFont)+"\"")
+	if f.Name != "" || f.ASCII != "" || f.HighANSI != "" || f.EastAsia != "" || f.ComplexScript != "" || f.FallbackFont != "" {
+		families := make([]string, 0, 6)
+		seen := make(map[string]bool, 6)
+		for _, family := range []string{f.Name, f.ASCII, f.HighANSI, f.EastAsia, f.ComplexScript, f.FallbackFont} {
+			if family != "" && !seen[family] {
+				families = append(families, "\""+cssString(family)+"\"")
+				seen[family] = true
+			}
 		}
 		p = append(p, "font-family:"+strings.Join(families, ","))
 	}
@@ -1793,8 +1812,8 @@ func paragraphStyle(v any) string {
 }
 func tableStyle(t style.Table) string {
 	out := []string{"border-collapse:collapse"}
-	if t.Width > 0 {
-		out = append(out, "width:"+twipsPx(t.Width))
+	if width := tableWidthCSS(t); width != "" {
+		out = append(out, "width:"+width)
 	}
 	if strings.EqualFold(t.Layout, "fixed") {
 		out = append(out, "table-layout:fixed")
@@ -1821,6 +1840,20 @@ func tableStyle(t style.Table) string {
 	return strings.Join(out, ";")
 }
 
+func tableWidthCSS(t style.Table) string {
+	if t.Width <= 0 {
+		return ""
+	}
+	switch strings.ToLower(t.Unit) {
+	case "pct":
+		return formatFloat(float64(t.Width)/50) + "%"
+	case "auto", "nil":
+		return ""
+	default:
+		return twipsPx(t.Width)
+	}
+}
+
 func tableRowStyle(row style.Row) string {
 	var out []string
 	if row.CantSplit {
@@ -1834,8 +1867,8 @@ func tableRowStyle(row style.Row) string {
 
 func cellStyle(c style.Cell) string {
 	var out []string
-	if c.Width > 0 {
-		out = append(out, "width:"+twipsPx(c.Width))
+	if width := cellWidthCSS(c); width != "" {
+		out = append(out, "width:"+width)
 	}
 	if c.VAlign != "" {
 		out = append(out, "vertical-align:"+cssVAlign(c.VAlign))
@@ -1874,6 +1907,20 @@ func cellStyle(c style.Cell) string {
 		out = append(out, "border-left:"+borderCSS(b))
 	}
 	return strings.Join(out, ";")
+}
+
+func cellWidthCSS(c style.Cell) string {
+	if c.Width <= 0 {
+		return ""
+	}
+	switch strings.ToLower(c.Unit) {
+	case "pct":
+		return formatFloat(float64(c.Width)/50) + "%"
+	case "auto", "nil":
+		return ""
+	default:
+		return twipsPx(c.Width)
+	}
 }
 func asFont(v any) (style.Font, bool) {
 	switch x := v.(type) {

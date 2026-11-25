@@ -170,6 +170,27 @@ func TestHTMLDOCXParagraphLineSpacing(t *testing.T) {
 	}
 }
 
+func TestHTMLDOCXScriptFontInheritanceWithDirectOverride(t *testing.T) {
+	styles := `<w:style w:type="character" w:styleId="ParentFonts"><w:rPr><w:rFonts w:ascii="Parent ASCII" w:hAnsi="Parent ANSI" w:eastAsia="Parent East Asia" w:cs="Parent CS"/></w:rPr></w:style>`
+	body := `<w:p><w:r><w:rPr><w:rStyle w:val="ParentFonts"/><w:rFonts w:eastAsia="Child East Asia"/></w:rPr><w:t>mixed fonts</w:t></w:r></w:p>`
+	got := renderHTMLDOCXFormatting(t, body, styles, "")
+	for _, want := range []string{`font-family:"Child East Asia","Parent ASCII","Parent ANSI","Parent CS"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("script-specific font inheritance missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestHTMLDOCXCharacterStyleBasedOnInheritance(t *testing.T) {
+	styles := `<w:style w:type="character" w:styleId="base"><w:rPr><w:rFonts w:ascii="Base ASCII" w:eastAsia="Base East Asia"/><w:b/></w:rPr></w:style><w:style w:type="character" w:styleId="child"><w:basedOn w:val="base"/><w:rPr><w:i/></w:rPr></w:style>`
+	body := `<w:p><w:r><w:rPr><w:rStyle w:val="child"/><w:rFonts w:eastAsia="Direct East Asia"/><w:b w:val="0"/></w:rPr><w:t>inherited character style</w:t></w:r></w:p>`
+	got := renderHTMLDOCXFormatting(t, body, styles, "")
+	requireHTMLDOCXFormatting(t, got, `font-family:"Direct East Asia","Base ASCII"`, "font-style:italic", "inherited character style")
+	if strings.Contains(got, "font-weight:700") {
+		t.Fatalf("direct false must clear bold inherited through character basedOn: %s", got)
+	}
+}
+
 func TestHTMLDOCXNumericHeadingStyleKeepsFormatting(t *testing.T) {
 	const styles = `<w:style w:type="paragraph" w:styleId="1"><w:name w:val="heading 1"/><w:pPr><w:jc w:val="left"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="48"/></w:rPr></w:style>`
 	body := `<w:p><w:pPr><w:pStyle w:val="1"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>heading</w:t></w:r></w:p>`

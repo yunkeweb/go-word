@@ -32,7 +32,7 @@
 ## 安装
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.15.0
+go get github.com/yunkeweb/go-word@v0.16.0
 ```
 
 需要 **Go 1.21** 或更高版本。
@@ -47,7 +47,9 @@ go get github.com/yunkeweb/go-word@v0.15.0
 
 **v0.15.0 复杂对象：** DrawingML 形状和文本框会保留安全的几何、填充、边框、旋转、翻转及内部文字，并输出为 HTML/CSS 容器。图表输出为不依赖 JavaScript 的语义化表格，包含标题、图例、系列、类别、数值和组合图坐标轴信息。缺失图表缓存和未知 DrawingML 结构会通过诊断保留，并提供可读降级输出。外链图片默认不会下载。
 
-升级时请使用具名字段初始化 `style.ListItem` 和 `style.Spacing`，两者分别新增了 `Start` 和 `BeforeSet`/`AfterSet`。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-13-0)和[更新日志](CHANGELOG.md)。
+**v0.16.0 表格与字体保真：** DOCX 表格网格、尺寸、边框、间距、单元格格式及合并信息会保留到 DOM 和 HTML；脚本字体与主题色 tint/shade 也会保留。跨行合并中断或结构不一致时，受影响单元格的内容仍可见。
+
+升级时请使用具名字段初始化样式。`style.ListItem` 和 `style.Spacing` 在 v0.13.0 新增了字段；v0.16.0 为 `style.Font` 和 `style.Table` 新增字段，原有按位置初始化的字面量需要调整。详见[升级说明](https://go-word.yunkeweb.com/zh/guide/docx-to-html#升级至-v0-16-0)和[更新日志](CHANGELOG.md)。
 
 **v0.13.0 修复：** 启用 `Standalone: true` 和 `IncludeCSS: true` 后，HTML 按各节纸张尺寸、方向与页边距保留屏幕及打印版心宽度；超链接明确指定的颜色与下划线设置覆盖浏览器默认样式。屏幕预览向下延伸，不复现 Word 自动分页；同时包含 v0.12.1 的 DOCX 样式继承修复。
 
@@ -82,7 +84,7 @@ func main() {
 	}
 
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.15.0", 1)
+	sec.AddTitle("GoWord v0.16.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddSDTDropdown("Department", "dept", map[string]string{
 		"eng": "Engineering",

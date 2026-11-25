@@ -2,6 +2,7 @@ package word
 
 import (
 	"encoding/xml"
+	"math"
 	"strconv"
 	"strings"
 
@@ -16,15 +17,13 @@ type wordValue struct {
 }
 
 type wordRunProperties struct {
-	Style *wordValue `xml:"rStyle"`
-	Fonts *struct {
-		ASCII         string `xml:"ascii,attr"`
-		HighANSI      string `xml:"hAnsi,attr"`
-		EastAsia      string `xml:"eastAsia,attr"`
-		ASCIITheme    string `xml:"asciiTheme,attr"`
-		HighANSITheme string `xml:"hAnsiTheme,attr"`
-		EastAsiaTheme string `xml:"eastAsiaTheme,attr"`
-	} `xml:"rFonts"`
+	Style    *wordValue    `xml:"rStyle"`
+	Fonts    *wordRunFonts `xml:"rFonts"`
+	Language *struct {
+		Value    string `xml:"val,attr"`
+		EastAsia string `xml:"eastAsia,attr"`
+		Bidi     string `xml:"bidi,attr"`
+	} `xml:"lang"`
 	Size      *wordValue   `xml:"sz"`
 	Color     *wordColor   `xml:"color"`
 	Bold      *wordValue   `xml:"b"`
@@ -40,6 +39,18 @@ type wordRunProperties struct {
 	Shading   *wordShading `xml:"shd"`
 }
 
+type wordRunFonts struct {
+	ASCII              string `xml:"ascii,attr"`
+	HighANSI           string `xml:"hAnsi,attr"`
+	EastAsia           string `xml:"eastAsia,attr"`
+	ComplexScript      string `xml:"cs,attr"`
+	ASCIITheme         string `xml:"asciiTheme,attr"`
+	HighANSITheme      string `xml:"hAnsiTheme,attr"`
+	EastAsiaTheme      string `xml:"eastAsiaTheme,attr"`
+	ComplexScriptTheme string `xml:"cstheme,attr"`
+	Hint               string `xml:"hint,attr"`
+}
+
 type wordColor struct {
 	Val        string `xml:"val,attr"`
 	ThemeColor string `xml:"themeColor,attr"`
@@ -48,9 +59,15 @@ type wordColor struct {
 }
 
 type wordShading struct {
-	Val   string `xml:"val,attr"`
-	Color string `xml:"color,attr"`
-	Fill  string `xml:"fill,attr"`
+	Val            string `xml:"val,attr"`
+	Color          string `xml:"color,attr"`
+	Fill           string `xml:"fill,attr"`
+	ThemeColor     string `xml:"themeColor,attr"`
+	ThemeFill      string `xml:"themeFill,attr"`
+	ThemeTint      string `xml:"themeTint,attr"`
+	ThemeShade     string `xml:"themeShade,attr"`
+	ThemeFillTint  string `xml:"themeFillTint,attr"`
+	ThemeFillShade string `xml:"themeFillShade,attr"`
 }
 
 type wordParagraphProperties struct {
@@ -170,7 +187,7 @@ func parseWordTheme(data []byte) (*wordTheme, error) {
 		t.fonts[prefix+"HAnsi"] = group.Latin.Typeface
 		t.fonts[prefix+"Ascii"] = group.Latin.Typeface
 		t.fonts[prefix+"EastAsia"] = group.EastAsia.Typeface
-		t.fonts[prefix+"CS"] = group.CS.Typeface
+		t.fonts[prefix+"Bidi"] = group.CS.Typeface
 	}
 	return t, nil
 }
@@ -256,7 +273,7 @@ func (s *wordStyleSheet) paragraph(direct wordParagraphProperties) wordParagraph
 	if s != nil {
 		id = s.defaultPara
 		s.defaultFont.apply(&out.font, false, s.theme)
-		s.defaultParagraph.apply(&out)
+		s.defaultParagraph.apply(&out, s.theme)
 	}
 	if direct.Style != nil {
 		id = direct.Style.Val
@@ -272,10 +289,10 @@ func (s *wordStyleSheet) paragraph(direct wordParagraphProperties) wordParagraph
 			if depth := wordHeadingLevel(st.Name.Val); depth > 0 {
 				out.para.OutlineLevel = depth
 			}
-			st.Para.apply(&out)
+			st.Para.apply(&out, s.theme)
 		}
 	}
-	direct.apply(&out)
+	direct.apply(&out, themeFromStyles(s))
 	return out
 }
 
@@ -327,19 +344,42 @@ func wordToggle(dst *bool, value *wordValue, inStyle bool) {
 
 func (r wordRunProperties) apply(f *style.Font, inStyle bool, theme *wordTheme) {
 	if r.Fonts != nil {
-		switch {
-		case r.Fonts.EastAsia != "":
-			f.Name = r.Fonts.EastAsia
-		case r.Fonts.EastAsiaTheme != "":
-			f.Name = theme.font(themeFontKey(r.Fonts.EastAsiaTheme, "EastAsia"))
-		case r.Fonts.ASCII != "":
-			f.Name = r.Fonts.ASCII
-		case r.Fonts.ASCIITheme != "":
-			f.Name = theme.font(themeFontKey(r.Fonts.ASCIITheme, "Ascii"))
-		case r.Fonts.HighANSI != "":
-			f.Name = r.Fonts.HighANSI
-		case r.Fonts.HighANSITheme != "":
-			f.Name = theme.font(themeFontKey(r.Fonts.HighANSITheme, "HAnsi"))
+		if name := resolveWordFont(r.Fonts.ASCII, r.Fonts.ASCIITheme, theme, "Ascii"); name != "" {
+			f.ASCII = name
+		}
+		if name := resolveWordFont(r.Fonts.HighANSI, r.Fonts.HighANSITheme, theme, "HAnsi"); name != "" {
+			f.HighANSI = name
+		}
+		if name := resolveWordFont(r.Fonts.EastAsia, r.Fonts.EastAsiaTheme, theme, "EastAsia"); name != "" {
+			f.EastAsia = name
+		}
+		if name := resolveWordFont(r.Fonts.ComplexScript, r.Fonts.ComplexScriptTheme, theme, "CS"); name != "" {
+			f.ComplexScript = name
+		}
+		if r.Fonts.Hint != "" {
+			f.Hint = r.Fonts.Hint
+		}
+		for _, name := range []string{
+			resolveWordFont(r.Fonts.EastAsia, r.Fonts.EastAsiaTheme, theme, "EastAsia"),
+			resolveWordFont(r.Fonts.ASCII, r.Fonts.ASCIITheme, theme, "Ascii"),
+			resolveWordFont(r.Fonts.HighANSI, r.Fonts.HighANSITheme, theme, "HAnsi"),
+			resolveWordFont(r.Fonts.ComplexScript, r.Fonts.ComplexScriptTheme, theme, "CS"),
+		} {
+			if name != "" {
+				f.Name = name
+				break
+			}
+		}
+	}
+	if r.Language != nil {
+		if r.Language.Value != "" {
+			f.Lang = r.Language.Value
+		}
+		if r.Language.EastAsia != "" {
+			f.EastAsiaLang = r.Language.EastAsia
+		}
+		if r.Language.Bidi != "" {
+			f.ComplexScriptLang = r.Language.Bidi
 		}
 	}
 	if r.Size != nil {
@@ -347,10 +387,8 @@ func (r wordRunProperties) apply(f *style.Font, inStyle bool, theme *wordTheme) 
 		f.Size = n / 2
 	}
 	if r.Color != nil {
-		if r.Color.Val != "" {
-			f.Color = r.Color.Val
-		} else {
-			f.Color = theme.color(r.Color.ThemeColor)
+		if color := resolveWordColor(theme, r.Color.ThemeColor, r.Color.Tint, r.Color.Shade, r.Color.Val); color != "" {
+			f.Color = color
 		}
 	}
 	wordToggle(&f.Bold, r.Bold, inStyle)
@@ -369,13 +407,123 @@ func (r wordRunProperties) apply(f *style.Font, inStyle bool, theme *wordTheme) 
 		f.SubScript = r.VertAlign.Val == "subscript"
 	}
 	if r.Shading != nil {
-		f.Shading = style.Shading(*r.Shading)
-		f.BgColor = r.Shading.Fill
+		f.Shading = resolveWordShading(*r.Shading, theme)
+		f.BgColor = f.Shading.Fill
 	}
+}
+
+func themeFromStyles(s *wordStyleSheet) *wordTheme {
+	if s == nil {
+		return nil
+	}
+	return s.theme
+}
+
+func resolveWordShading(shading wordShading, theme *wordTheme) style.Shading {
+	out := style.Shading{Val: shading.Val, Color: shading.Color, Fill: shading.Fill}
+	if fill := resolveWordColor(theme, shading.ThemeFill, shading.ThemeFillTint, shading.ThemeFillShade, ""); fill != "" {
+		out.Fill = fill
+	}
+	if out.Color == "" {
+		out.Color = resolveWordColor(theme, shading.ThemeColor, shading.ThemeTint, shading.ThemeShade, "")
+	}
+	return out
+}
+
+func resolveWordColor(theme *wordTheme, themeColor, tint, shade, fallback string) string {
+	if color := theme.color(themeColor); color != "" {
+		return transformThemeColor(color, tint, shade)
+	}
+	return fallback
+}
+
+func transformThemeColor(color, tint, shade string) string {
+	color = strings.TrimPrefix(strings.TrimSpace(color), "#")
+	if len(color) != 6 {
+		return color
+	}
+	if tint == "" && shade == "" {
+		return color
+	}
+	var rgb [3]float64
+	for i := range rgb {
+		value, err := strconv.ParseUint(color[i*2:i*2+2], 16, 8)
+		if err != nil {
+			return color
+		}
+		rgb[i] = float64(value) / 255
+	}
+	max := math.Max(rgb[0], math.Max(rgb[1], rgb[2]))
+	min := math.Min(rgb[0], math.Min(rgb[1], rgb[2]))
+	luminance := (max + min) / 2
+	delta := max - min
+	hue, saturation := 0.0, 0.0
+	if delta != 0 {
+		saturation = delta / (1 - math.Abs(2*luminance-1))
+		switch max {
+		case rgb[0]:
+			hue = math.Mod((rgb[1]-rgb[2])/delta, 6)
+		case rgb[1]:
+			hue = (rgb[2]-rgb[0])/delta + 2
+		default:
+			hue = (rgb[0]-rgb[1])/delta + 4
+		}
+		hue *= 60
+		if hue < 0 {
+			hue += 360
+		}
+	}
+	if value, err := strconv.ParseUint(tint, 16, 8); err == nil && tint != "" {
+		factor := float64(value) / 255
+		luminance = luminance*factor + (1 - factor)
+	} else if value, err := strconv.ParseUint(shade, 16, 8); err == nil && shade != "" {
+		luminance *= float64(value) / 255
+	} else {
+		return color
+	}
+	chroma := (1 - math.Abs(2*luminance-1)) * saturation
+	x := chroma * (1 - math.Abs(math.Mod(hue/60, 2)-1))
+	m := luminance - chroma/2
+	switch {
+	case hue < 60:
+		rgb = [3]float64{chroma, x, 0}
+	case hue < 120:
+		rgb = [3]float64{x, chroma, 0}
+	case hue < 180:
+		rgb = [3]float64{0, chroma, x}
+	case hue < 240:
+		rgb = [3]float64{0, x, chroma}
+	case hue < 300:
+		rgb = [3]float64{x, 0, chroma}
+	default:
+		rgb = [3]float64{chroma, 0, x}
+	}
+	var out strings.Builder
+	out.Grow(6)
+	const hex = "0123456789ABCDEF"
+	for _, component := range rgb {
+		value := byte(math.Round((component + m) * 255))
+		out.WriteByte(hex[value>>4])
+		out.WriteByte(hex[value&0x0F])
+	}
+	return out.String()
+}
+
+func resolveWordFont(direct, themeRef string, theme *wordTheme, script string) string {
+	if direct != "" {
+		return direct
+	}
+	if themeRef != "" {
+		return theme.font(themeFontKey(themeRef, script))
+	}
+	return ""
 }
 
 func themeFontKey(ref, script string) string {
 	ref = strings.ToLower(strings.TrimSpace(ref))
+	if script == "CS" {
+		script = "Bidi"
+	}
 	if strings.HasPrefix(ref, "major") {
 		return "major" + script
 	}
@@ -388,7 +536,7 @@ func wordInt(dst *int, src *int) {
 	}
 }
 
-func (p wordParagraphProperties) apply(out *wordParagraphFormat) {
+func (p wordParagraphProperties) apply(out *wordParagraphFormat, theme *wordTheme) {
 	para := &out.para
 	if p.Align != nil {
 		para.Alignment = p.Align.Val
@@ -433,6 +581,6 @@ func (p wordParagraphProperties) apply(out *wordParagraphFormat) {
 		para.Bidi = wordOn(p.Bidi.Val)
 	}
 	if p.Shading != nil {
-		para.Shading = style.Shading(*p.Shading)
+		para.Shading = resolveWordShading(*p.Shading, theme)
 	}
 }

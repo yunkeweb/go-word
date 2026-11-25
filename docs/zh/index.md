@@ -136,7 +136,7 @@ func main() {
 	doc := word.New()
 	doc.SetDefaultFontName("Calibri")
 	sec := doc.AddSection()
-	sec.AddTitle("GoWord v0.15.0", 1)
+	sec.AddTitle("GoWord v0.16.0", 1)
 	sec.AddSDTText("Full name", "full_name", "Enter full name")
 	sec.AddMath(`\frac{a}{b}`)
 	doc.SetTextWatermark("CONFIDENTIAL", word.WatermarkOptions{Tile: true, Angle: -45})
@@ -147,7 +147,7 @@ func main() {
 ```
 
 ```sh
-go get github.com/yunkeweb/go-word@v0.15.0
+go get github.com/yunkeweb/go-word@v0.16.0
 ```
 
 接着阅读 [安装](/zh/guide/installation)、[快速开始](/zh/guide/getting-started)、[SDT](/zh/guide/sdt)、[表格](/zh/guide/table)、[水印与保护](/zh/guide/protect)，以及四份 [企业级实战案例](/zh/guide/recipes)。完整签名见 [pkg.go.dev](https://pkg.go.dev/github.com/yunkeweb/go-word)。

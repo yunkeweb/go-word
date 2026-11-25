@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.16.0 — 2026-11-26
+
+### Table and typography fidelity
+
+- Read and round-trip DOCX table grids, dimensions, layout, borders, spacing, shading, row properties, cell padding, and merge metadata; render grid widths as HTML `<colgroup>` columns.
+- Preserve cell content when vertical merges are interrupted or merge spans disagree, and retain percentage table/cell widths.
+- Preserve script-specific run fonts and language properties, and resolve theme tint/shade for text colors, shading, and borders.
+- Add OOXML reader, DOCX round-trip, HTML structure, and fallback regression coverage for tables, nested tables, merges, fonts, and theme colors.
+- Upgrade note: `style.Font` and `style.Table` gain fields; use keyed struct literals because unkeyed literals need to be updated.
+- 读取并往返保留 DOCX 表格网格、尺寸、布局、边框、间距、底色、行属性、单元格内边距及合并信息；HTML 以 `<colgroup>` 输出网格列宽。
+- 跨行合并中断或合并跨度不匹配时保留单元格内容，并保留表格和单元格的百分比宽度。
+- 分别保留脚本字体与语言属性，并解析文本颜色、底色和边框的主题色 tint/shade。
+- 增加覆盖表格、嵌套表格、单元格合并、字体和主题色的 OOXML 读取、DOCX 往返、HTML 结构及降级回归测试。
+- 升级提示：`style.Font` 和 `style.Table` 新增字段；请使用具名字段初始化，原有按位置初始化的字面量需要调整。
+
 ## v0.15.0 — 2026-10-29
 
 ### DOCX to HTML complex objects / DOCX 转 HTML 复杂对象

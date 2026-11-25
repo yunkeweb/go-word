@@ -191,6 +191,52 @@ func TestRenderHTMLTablePaginationAndFixedLayout(t *testing.T) {
 	}
 }
 
+func TestRenderHTMLTablePercentageWidth(t *testing.T) {
+	doc := New()
+	table := doc.AddSection().AddTable(style.Table{Width: 2500, Unit: "pct", Layout: "fixed"})
+	table.AddRow().AddCell(2500, style.Cell{Width: 2500, Unit: "pct"}).AddText("percent width")
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `width:50%`) || !strings.Contains(string(got), `<td style="width:50%">`) {
+		t.Fatalf("table or cell percentage width was treated as twips: %s", got)
+	}
+}
+
+func TestRenderHTMLTableMismatchedVerticalMergeStaysVisible(t *testing.T) {
+	doc := New()
+	table := doc.AddSection().AddTable(nil)
+	table.AddRow().AddCell(2000, style.Cell{GridSpan: 2, VMerge: "restart"}).AddText("root")
+	table.AddRow().AddCell(1000, style.Cell{VMerge: "continue"}).AddText("mismatched continuation")
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	if !strings.Contains(s, "mismatched continuation") || strings.Contains(s, `rowspan="2"`) {
+		t.Fatalf("mismatched vertical merge must degrade to visible cells: %s", s)
+	}
+	assertHTMLStructure(t, s)
+}
+
+func TestRenderHTMLTableInterruptedVerticalMergeStaysVisible(t *testing.T) {
+	doc := New()
+	table := doc.AddSection().AddTable(nil)
+	table.AddRow().AddCell(1000, style.Cell{VMerge: "restart"}).AddText("root")
+	table.AddRow().AddCell(1000).AddText("interrupt")
+	table.AddRow().AddCell(1000, style.Cell{VMerge: "continue"}).AddText("orphan continuation")
+	got, err := doc.RenderHTML(HTMLOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	if !strings.Contains(s, "orphan continuation") || strings.Contains(s, `rowspan="3"`) {
+		t.Fatalf("interrupted vertical merge must remain visible: %s", s)
+	}
+	assertHTMLStructure(t, s)
+}
+
 func TestRenderHTMLTableBordersSpacingAndCellPadding(t *testing.T) {
 	doc := New()
 	table := doc.AddSection().AddTable(style.Table{
@@ -302,36 +348,48 @@ func TestRenderHTMLAdvancedFontFallbackAndMetrics(t *testing.T) {
 }
 
 func TestWordThemeFontsAndColorsResolveForHTML(t *testing.T) {
-	themeXML := `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="x"><a:accent1><a:srgbClr val="336699"/></a:accent1></a:clrScheme><a:fontScheme name="x"><a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface="Noto Sans CJK"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/><a:ea typeface="Noto Sans CJK SC"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>`
+	themeXML := `<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:clrScheme name="x"><a:accent1><a:srgbClr val="336699"/></a:accent1></a:clrScheme><a:fontScheme name="x"><a:majorFont><a:latin typeface="Aptos Display"/><a:ea typeface="Noto Sans CJK"/><a:cs typeface="Noto Sans Arabic"/></a:majorFont><a:minorFont><a:latin typeface="Aptos"/><a:ea typeface="Noto Sans CJK SC"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>`
 	theme, err := parseWordTheme([]byte(themeXML))
 	if err != nil {
 		t.Fatal(err)
 	}
 	sheet := &wordStyleSheet{theme: theme}
 	font := sheet.font(style.Font{}, wordRunProperties{
-		Fonts: &struct {
-			ASCII         string `xml:"ascii,attr"`
-			HighANSI      string `xml:"hAnsi,attr"`
-			EastAsia      string `xml:"eastAsia,attr"`
-			ASCIITheme    string `xml:"asciiTheme,attr"`
-			HighANSITheme string `xml:"hAnsiTheme,attr"`
-			EastAsiaTheme string `xml:"eastAsiaTheme,attr"`
-		}{ASCIITheme: "majorAscii", EastAsiaTheme: "minorEastAsia"},
+		Fonts: &wordRunFonts{ASCIITheme: "majorAscii", EastAsiaTheme: "minorEastAsia"},
 		Color: &wordColor{ThemeColor: "accent1"},
 	})
 	if font.Name != "Noto Sans CJK SC" || font.Color != "336699" {
 		t.Fatalf("theme resolution = %+v", font)
 	}
-	major := sheet.font(style.Font{}, wordRunProperties{Fonts: &struct {
-		ASCII         string `xml:"ascii,attr"`
-		HighANSI      string `xml:"hAnsi,attr"`
-		EastAsia      string `xml:"eastAsia,attr"`
-		ASCIITheme    string `xml:"asciiTheme,attr"`
-		HighANSITheme string `xml:"hAnsiTheme,attr"`
-		EastAsiaTheme string `xml:"eastAsiaTheme,attr"`
-	}{ASCIITheme: "majorAscii"}})
+	major := sheet.font(style.Font{}, wordRunProperties{Fonts: &wordRunFonts{ASCIITheme: "majorAscii"}})
 	if major.Name != "Aptos Display" {
 		t.Fatalf("major theme font = %q", major.Name)
+	}
+	bidi := sheet.font(style.Font{}, wordRunProperties{Fonts: &wordRunFonts{ComplexScriptTheme: "majorBidi"}})
+	if bidi.Name != "Noto Sans Arabic" || bidi.ComplexScript != "Noto Sans Arabic" {
+		t.Fatalf("complex-script theme font = %+v", bidi)
+	}
+	tinted := sheet.font(style.Font{}, wordRunProperties{Color: &wordColor{ThemeColor: "accent1", Tint: "80"}})
+	if tinted.Color != "8CB2D9" {
+		t.Errorf("theme tint = %q, want 8CB2D9", tinted.Color)
+	}
+	shaded := sheet.font(style.Font{}, wordRunProperties{Color: &wordColor{ThemeColor: "accent1", Shade: "80"}})
+	if shaded.Color != "1A334D" {
+		t.Errorf("theme shade = %q, want 1A334D", shaded.Color)
+	}
+	if got := transformThemeColor("4F81BD", "99", ""); got != "95B3D7" {
+		t.Errorf("OOXML tint vector = %q, want 95B3D7", got)
+	}
+	if got := transformThemeColor("C0504D", "", "BF"); got != "953735" {
+		t.Errorf("OOXML shade transform = %q, want 953735", got)
+	}
+	shading := resolveWordShading(wordShading{Val: "clear", ThemeFill: "accent1", ThemeFillTint: "80"}, theme)
+	if shading.Fill != "8CB2D9" {
+		t.Errorf("themed shading fill = %q, want 8CB2D9", shading.Fill)
+	}
+	borders := (&wordTableBorders{Top: &wordTableBorder{Style: "single", ThemeColor: "accent1", ThemeShade: "80"}}).styleBorders(theme)
+	if borders.Top.Color != "1A334D" {
+		t.Errorf("themed border color = %q, want 1A334D", borders.Top.Color)
 	}
 	doc := New()
 	doc.AddSection().AddText("theme", font)

@@ -184,6 +184,7 @@ func cloneChart(ch *Chart) *Chart {
 
 func cloneTable(t *Table) *Table {
 	out := &Table{Style: t.Style, Width: t.Width}
+	out.Style.GridWidths = append([]int(nil), t.Style.GridWidths...)
 	out.Base = t.Base
 	for _, r := range t.Rows {
 		nr := &Row{Style: r.Style}
